@@ -105,6 +105,15 @@
                 <div class="notification is-warning">All steps of this history ran in history {{ report.all_steps_from_history }}: the history is a copy of a whole history. This is expected for a history imported by a tutor, not for a history shared by a student.</div>
                 {% endif %}
 
+                {% if report.in_short %}
+                <h2>In short</h2>
+                    <ul>
+                    {% for sentence in report.in_short %}
+                        <li>{{ sentence }}</li>
+                    {% endfor %}
+                    </ul>
+                {% endif %}
+
                 {% if report.score %}
                 <h2>Summary</h2>
                     <table class="table is-fullwidth">

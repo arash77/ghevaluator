@@ -276,3 +276,28 @@ def test_read_students_csv(tmp_path):
         "reference": "https://usegalaxy.eu/histories/view?id=c1ad4cd9d7df4ada",
     }]
     assert ghevaluator.safe_name("Student A / B") == "Student_A_B"
+
+
+def test_in_short():
+    report = compare(load(STUDENT_ID), load(REF_ID))
+    assert report["in_short"] == ["7 of 9 steps done. Missing: Sort (2 times).", "Extra steps: Select last."]
+    ref = load(REF_ID)
+    hist = copy.deepcopy(ref)
+    set_parameter(hist["steps"][step_by_tool(hist, "Grouping1")], "ignorecase", "true")
+    assert compare(hist, ref)["in_short"] == ["All 9 steps done.", "Different settings (number of parameters): Group (1)."]
+
+
+def test_overview():
+    report = compare(load(STUDENT_ID), load(REF_ID))
+    rows = [
+        {"student": "Student A", "tutorial": "peaks", "report": "Student_A_peaks/report.md", "score": report["score"], "in_short": report["in_short"], "error": None},
+        {"student": "Student B", "tutorial": "peaks", "report": "Student_B_peaks/report.md", "score": None, "in_short": [], "error": "400 Client Error"},
+    ]
+    content = ghevaluator.generate_overview_content(rows)
+    assert "| Student A | peaks | 77.8 % |  | 7 of 9 steps done. Missing: Sort (2 times). Extra steps: Select last. | [report](Student_A_peaks/report.md) |" in content
+    assert "Could not be evaluated: 400 Client Error" in content
+
+
+def test_slug_link_needs_api_key():
+    assert ghevaluator.history.find_history_by_slug("https://usegalaxy.eu", "/u/someone/h/some-history") is None
+    assert ghevaluator.history.find_history_by_slug("https://usegalaxy.eu", "/histories/list", "key") is None

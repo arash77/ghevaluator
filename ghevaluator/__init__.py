@@ -400,7 +400,61 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
         'cached_steps': sum(1 for s in hist_steps.values() if s.get('cached')),
         'all_steps_from_history': report['all_steps_from_history'],
     }
+    report['in_short'] = summarize_report(report)
     return report
+
+
+def count_names(names):
+    """
+    Join names, with the number of times a name is repeated
+
+    :param names: list of names
+    :return: text, e.g. "Sort (2 times), Group"
+    """
+    counts = {}
+    for name in names:
+        counts[name] = counts.get(name, 0) + 1
+    return ", ".join(f"{n} ({c} times)" if c > 1 else n for n, c in counts.items())
+
+
+def summarize_report(report):
+    """
+    Summarize a report in a few plain sentences, for tutors
+
+    :param report: dictionary with report from `compare_workflows`
+    :return: list of sentences
+    """
+    steps = list(report['comparison_given_reference_workflow_order'].values())
+    matched = [s for s in steps if s['status'] == 'matched']
+    missing = [s['tool']['workflow'] for s in steps if s['status'] == 'missing']
+    sentences = []
+    if report.get('all_steps_from_history'):
+        sentences.append(f"All steps ran in another history ({report['all_steps_from_history']}): this is a copy of a whole history.")
+    if missing:
+        sentences.append(f"{len(matched)} of {len(steps)} steps done. Missing: {count_names(missing)}.")
+    else:
+        sentences.append(f"All {len(steps)} steps done.")
+    params = [f"{s['tool']['workflow']} ({s['parameters']['wrong']})" for s in matched if s['parameters']['wrong']]
+    if params:
+        sentences.append(f"Different settings (number of parameters): {', '.join(params)}.")
+    inputs = [s['tool']['workflow'] for s in matched if not s['inputs_connection']['same']]
+    if inputs:
+        sentences.append(f"Run on other inputs than in the reference: {count_names(inputs)}.")
+    formats = [s['tool']['workflow'] for s in matched if s.get('output_formats') and not s['output_formats']['same']]
+    if formats:
+        sentences.append(f"Other output formats: {count_names(formats)}.")
+    extra = [s['tool'] for s in report['extra_steps'] if not s['deleted']]
+    if extra:
+        sentences.append(f"Extra steps: {count_names(extra)}.")
+    copied = [s['tool'] for s in report['copied_steps']]
+    if copied and not report.get('all_steps_from_history'):
+        sentences.append(f"Results copied from another history: {count_names(copied)}.")
+    if report['score']['cached_steps']:
+        sentences.append(f"{report['score']['cached_steps']} steps reused results from earlier jobs (job cache).")
+    final = report.get('final_outputs')
+    if final and final.get('best_content_similarity') is not None:
+        sentences.append(f"Final result {round(100 * final['best_content_similarity'])} % similar to the reference.")
+    return sentences
 
 
 def get_template_env():
@@ -544,6 +598,53 @@ def safe_name(name):
     return re.sub(r'[^\w-]+', '_', name, flags=re.UNICODE).strip('_') or 'history'
 
 
+def evaluate_histories(rows, output_dp, apikey=None):
+    """
+    Evaluate several histories and write one report per history and an overview
+
+    :param rows: list of dictionaries with `student`, `history` (URL), `reference` (URL) and optional `tutorial`
+    :param output_dp: Path object of the output directory
+    :param apikey: optional Galaxy API key
+    :return: list of overview rows
+    """
+    references = {}
+    overview = []
+    folders = set()
+    for row in rows:
+        folder = safe_name(row['student'] + (f"_{row['tutorial']}" if row.get('tutorial') else ""))
+        base, n = folder, 1
+        while folder in folders:
+            n += 1
+            folder = f"{base}_{n}"
+        folders.add(folder)
+        entry = dict(row, report=f"{folder}/report.md", score=None, in_short=[], error=None)
+        try:
+            if row['reference'] not in references:
+                references[row['reference']] = get_reference(row['reference'], apikey)
+            report = evaluate(row['history'], row['reference'], apikey, references[row['reference']])
+            generate_report_files(report, output_dp / folder)
+            entry['score'] = report['score']
+            entry['in_short'] = report['in_short']
+        except Exception as e:  # keep going with the other histories
+            entry['error'] = str(e)
+        overview.append(entry)
+    output_dp.mkdir(parents=True, exist_ok=True)
+    with (output_dp / "overview.json").open('w') as out_f:
+        json.dump(overview, out_f, ensure_ascii=False, indent=4)
+    with (output_dp / "overview.md").open('w') as out_f:
+        out_f.write(generate_overview_content(overview))
+    return overview
+
+
+def generate_overview_content(overview):
+    """
+    Generate the Markdown overview of several evaluated histories
+
+    :param overview: list of overview rows from `evaluate_histories`
+    """
+    return get_template_env().get_template("overview.md").render(rows=overview)
+
+
 def ghevaluator_batch(csv_fp, output_dp, apikey=None, galaxy_url="https://usegalaxy.eu"):
     """
     Evaluate several histories listed in a CSV file and write one report per history and an overview
@@ -554,23 +655,4 @@ def ghevaluator_batch(csv_fp, output_dp, apikey=None, galaxy_url="https://usegal
     :param galaxy_url: Galaxy URL used for history ids in the CSV file
     :return: list of overview rows
     """
-    references = {}
-    overview = []
-    for row in read_students_csv(csv_fp, galaxy_url):
-        folder = safe_name(row['student'])
-        entry = dict(row, report=f"{folder}/report.md", score=None, error=None)
-        try:
-            if row['reference'] not in references:
-                references[row['reference']] = get_reference(row['reference'], apikey)
-            report = evaluate(row['history'], row['reference'], apikey, references[row['reference']])
-            generate_report_files(report, output_dp / folder)
-            entry['score'] = report['score']
-        except Exception as e:  # keep going with the other histories
-            entry['error'] = str(e)
-        overview.append(entry)
-    output_dp.mkdir(parents=True, exist_ok=True)
-    with (output_dp / "overview.json").open('w') as out_f:
-        json.dump(overview, out_f, ensure_ascii=False, indent=4)
-    with (output_dp / "overview.md").open('w') as out_f:
-        out_f.write(get_template_env().get_template("overview.md").render(rows=overview))
-    return overview
+    return evaluate_histories(read_students_csv(csv_fp, galaxy_url), output_dp, apikey)

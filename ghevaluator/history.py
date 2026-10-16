@@ -54,9 +54,36 @@ def get_hist_info(hist_url, apikey=None):
         location = parse.urlparse(r.headers.get("Location", ""))
         hist_id = parse.parse_qs(location.query).get("id", [None])[0]
     if hist_id is None:
-        raise ValueError(f"Could not find the history id in {hist_url}, use a link with the history id (e.g. /histories/view?id=...)")
+        hist_id = find_history_by_slug(galaxy_url, url.path, apikey)
+    if hist_id is None:
+        raise ValueError(f"Could not open the history {hist_url}. Check that the history is shared with the account of the API key, or use a link with the history id (e.g. /histories/view?id=...)")
     hist_name = api_get(galaxy_url, f"histories/{hist_id}", apikey, params={"keys": "name"})["name"]
     return galaxy_url, hist_name, hist_id
+
+
+def find_history_by_slug(galaxy_url, path, apikey=None):
+    """
+    Find the id of a history from a /u/<username>/h/<slug> link, among the histories of
+    the API key owner and the histories shared with them
+
+    :param galaxy_url: URL of the Galaxy server
+    :param path: path of the link
+    :param apikey: API key
+    :return: history id or None
+    """
+    parts = [parse.unquote(p) for p in path.strip("/").split("/")]
+    if not apikey or len(parts) != 4 or parts[0] != "u" or parts[2] != "h":
+        return None
+    username, slug = parts[1], parts[3]
+    for listing in ("histories/shared_with_me", "histories"):
+        try:
+            histories = api_get(galaxy_url, listing, apikey, params={"keys": "id,slug,username", "limit": 10000})
+        except requests.HTTPError:
+            continue
+        for history in histories:
+            if history.get("slug") == slug and history.get("username") == username:
+                return history["id"]
+    return None
 
 
 def api_get(galaxy_url, path, apikey=None, params=None):
