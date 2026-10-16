@@ -21,8 +21,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description='Compare a Galaxy history to a reference workflow and generate a JSON report file')
     parser.add_argument('-u', '--history_url', help="URL to Galaxy history", required=True)
     parser.add_argument('-w', '--workflow_url', help="URL to reference workflow", required=True)
-    parser.add_argument('-a', '--apikey', help="Galaxy API key for the same instance where the history is", required=True)
-    parser.add_argument('-o', '--output', help="Path to output folder", type=Path)
+    parser.add_argument('-a', '--apikey', help="Galaxy API key for the same instance where the history is, not needed for published or shared histories")
+    parser.add_argument('-o', '--output', help="Path to output folder (default: current folder)", type=Path, default=Path('.'))
     args = parser.parse_args()
 
     ghevaluator.ghevaluator(

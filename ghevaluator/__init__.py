@@ -9,54 +9,119 @@ from pathlib import Path
 from urllib import parse
 
 
-def get_hist_info(hist_url):
+def get_hist_info(hist_url, apikey=None):
     """
     Get history name and Galaxy URL from history URL
 
+    Supported URLs are the ones with the history id as `id` query parameter
+    (e.g. `/histories/view?id=...` or `/published/history?id=...`) and the
+    `/u/<username>/h/<slug>` links of published histories.
+
     :param hist_url: URL to Galaxy history
+    :param apikey: optional API key to Galaxy server with history
     :return: Galaxy URL, history name and id
     """
     url = parse.urlparse(hist_url)
-    galaxy_url = url._replace(path="").geturl()
-    hist_name = url.path.split("/")[4]
-    # load history page to find history id
-    page_source = requests.get(hist_url).text
-    page_source = page_source.split('"params": {"id": "')[1]
-    hist_id = page_source.partition('"')[0]
+    galaxy_url = url._replace(path="", params="", query="", fragment="").geturl()
+    hist_id = parse.parse_qs(url.query).get("id", [None])[0]
+    if hist_id is None:
+        # /u/<username>/h/<slug> links redirect to a URL with the history id
+        r = requests.get(hist_url, allow_redirects=False)
+        location = parse.urlparse(r.headers.get("Location", ""))
+        hist_id = parse.parse_qs(location.query).get("id", [None])[0]
+    if hist_id is None:
+        raise ValueError(f"Could not find the history id in {hist_url}, use a link with the history id (e.g. /histories/view?id=...)")
+    headers = {"x-api-key": apikey} if apikey else {}
+    r = requests.get(f"{galaxy_url}/api/histories/{hist_id}", params={"keys": "name"}, headers=headers)
+    r.raise_for_status()
+    hist_name = r.json()["name"]
     return galaxy_url, hist_name, hist_id
 
 
-def get_workflow_from_history(hist_url, apikey):
+def get_collection_dataset_ids(gi, hdca_id):
     """
-    Extract the workflow from a Galaxy history using bioblend
+    Get the ids and uuids of all datasets inside a dataset collection, nested collections included
+
+    :param gi: Bioblend GalaxyInstance
+    :param hdca_id: id of the history dataset collection
+    :return: set of dataset ids and uuids
+    """
+    ids = set()
+
+    def walk(elements):
+        for element in elements:
+            obj = element.get("object") or {}
+            if element.get("element_type") == "dataset_collection":
+                walk(obj.get("elements", []))
+            else:
+                ids.update(v for v in (obj.get("id"), obj.get("uuid")) if v)
+
+    hdca = gi.make_get_request(f"{gi.url}/dataset_collections/{hdca_id}").json()
+    walk(hdca.get("elements", []))
+    return ids
+
+
+def get_workflow_from_history(hist_url, apikey=None):
+    """
+    Build a workflow from a Galaxy history, without changing anything in Galaxy
+
+    The steps come from the history extraction summary (the jobs and inputs Galaxy
+    would use to extract a workflow) and the connections from the inputs of the jobs.
+    The steps follow the format of a Galaxy workflow file (`.ga`).
 
     :param hist_url: URL to Galaxy history
-    :param apikey: API key to Galaxy server with history
+    :param apikey: API key to Galaxy server with history, optional for published or shared histories
     :return: dictionary with the workflow corresponding to Galaxy history
     """
     # Get Galaxy URL, history name and id
-    galaxy_url, hist_name, hist_id = get_hist_info(hist_url)
+    galaxy_url, hist_name, hist_id = get_hist_info(hist_url, apikey)
     # Connect to Galaxy instance
     gi = GalaxyInstance(url=galaxy_url, key=apikey)
-    # Get dataset and their job ids
-    hist = gi.histories.show_history(
-        history_id=hist_id,
-        types='dataset')
-    jobs = []
-    for ds in hist['state_ids']['ok']:
-        info = gi.histories.show_dataset_provenance(
-            history_id=hist_id,
-            dataset_id=ds,
-            follow=False)
-        jobs.append(info['job_id'])
-    jobs = list(set(jobs))  # remove duplicated ids
-    # Extract workflow from history
-    wf = gi.workflows.extract_workflow_from_history(
-        history_id=hist_id,
-        job_ids=jobs,
-        workflow_name=f'{hist_name} workflow')
-    wf_id = wf['id']
-    return gi.workflows.export_workflow_dict(wf_id)
+    summary = gi.make_get_request(f"{gi.url}/histories/{hist_id}/extraction_summary").json()
+    # uuids of datasets in the history, to connect jobs to copied datasets
+    contents = gi.make_get_request(
+        f"{gi.url}/histories/{hist_id}/contents",
+        params={"v": "dev", "keys": "id,uuid", "q": "history_content_type", "qv": "dataset", "limit": 10000},
+    ).json()
+    uuids = {c["id"]: c["uuid"] for c in contents if c.get("uuid")}
+    steps = {}
+    producers = {}  # dataset/collection id or uuid -> index of the step creating it
+    for job in summary["jobs"]:
+        if job.get("invalid"):
+            # job that Galaxy can not turn into a workflow step
+            continue
+        index = len(steps)
+        for output in job["outputs"]:
+            producers[output["id"]] = index
+            if output["id"] in uuids:
+                producers[uuids[output["id"]]] = index
+            if output["history_content_type"] == "dataset_collection":
+                for ds_id in get_collection_dataset_ids(gi, output["id"]):
+                    producers.setdefault(ds_id, index)
+        if job["step_type"] == "input_dataset":
+            steps[str(index)] = {"id": index, "name": "Input dataset", "type": "data_input", "tool_id": None, "input_connections": {}}
+        elif job["step_type"] == "input_collection":
+            steps[str(index)] = {"id": index, "name": "Input dataset collection", "type": "data_collection_input", "tool_id": None, "input_connections": {}}
+        else:
+            # for mapped over steps, the summary gives one of the jobs
+            job_details = gi.jobs.show_job(job["id"], full_details=True)
+            parameters = dict(job_details["params"])
+            input_connections = {}
+            for name, inp in job_details["inputs"].items():
+                producer = producers.get(inp.get("id"), producers.get(inp.get("uuid")))
+                input_connections[name] = {} if producer is None else {"id": producer, "output_name": "output"}
+                if "|" not in name:
+                    parameters.setdefault(name, "null")
+            steps[str(index)] = {
+                "id": index,
+                "name": job["tool_name"],
+                "type": "tool",
+                "tool_id": job["tool_id"],
+                "tool_version": job["tool_version"],
+                "tool_state": json.dumps(parameters),
+                "input_connections": input_connections,
+            }
+    return {"a_galaxy_workflow": "true", "name": f"{hist_name} workflow", "steps": steps}
 
 
 def get_standard_workflow(wf_url):
@@ -77,7 +142,7 @@ def is_input(step):
     :param step: dictionary with a workflow step
     :return: boolean
     """
-    return step['name'] == "Input dataset" or step['name'] == "Data Fetch" or step['type'] == 'data_input'
+    return step['name'] == "Input dataset" or step['name'] == "Data Fetch" or step['type'] in ('data_input', 'data_collection_input', 'parameter_input')
 
 
 def count_wf_inputs(wf):

@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 WF_URL = "https://training.galaxyproject.org/training-material/topics/introduction/tutorials/galaxy-intro-short/workflows/Galaxy-Workflow-galaxy-intro-short.ga"
-HIST_URL = "https://usegalaxy.eu/u/berenice/h/short-introduction-for-ghevaluator"
+HIST_URL = "https://usegalaxy.eu/histories/view?id=19b7e0ced2125767"
 APIKEY = os.getenv('GALAXY_API_KEY')
 
 
@@ -16,7 +16,7 @@ def test_get_hist_info():
     """
     galaxy_url, hist_name, hist_id = ghevaluator.get_hist_info(HIST_URL)
     assert galaxy_url == "https://usegalaxy.eu"
-    assert hist_name == "short-introduction-for-ghevaluator"
+    assert hist_name == "Short Introduction for ghevaluator"
     assert hist_id == "19b7e0ced2125767"
 
 
@@ -109,6 +109,7 @@ def test_is_input():
         "workflow_outputs": []
     }
     assert not ghevaluator.is_input(step)
+    assert ghevaluator.is_input({"name": "Input dataset collection", "type": "data_collection_input"})
 
 
 def test_count_wf_inputs():

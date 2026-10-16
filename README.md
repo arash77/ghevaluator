@@ -20,7 +20,7 @@ Galaxy History Evaluator can be used via command-line
 
 ```bash
 $ ghevaluator --help
-usage: ghevaluator [-h] -u HISTORY_URL -w WORKFLOW_URL -a APIKEY [-o OUTPUT]
+usage: ghevaluator [-h] -u HISTORY_URL -w WORKFLOW_URL [-a APIKEY] [-o OUTPUT]
 
 Compare a Galaxy history to a template workflow and generate the JSON and HTML report files
 
@@ -31,7 +31,7 @@ options:
   -w WORKFLOW_URL, --workflow_url WORKFLOW_URL
                         URL to template workflow
   -a APIKEY, --apikey APIKEY
-                        Galaxy API key
+                        Galaxy API key, not needed for published or shared histories
   -o OUTPUT, --output OUTPUT
                         Path to output directory
 ```
