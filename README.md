@@ -38,7 +38,8 @@ options:
                         Galaxy URL for history ids in the CSV file (default: https://usegalaxy.eu)
   -a APIKEY, --apikey APIKEY
                         Galaxy API key for the same instance where the history is, not needed for
-                        published or shared histories
+                        published histories or histories shared via link, needed for histories
+                        shared with a specific account
   -o OUTPUT, --output OUTPUT
                         Path to output folder (default: current folder)
 ```

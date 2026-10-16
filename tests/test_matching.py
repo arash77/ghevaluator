@@ -301,3 +301,25 @@ def test_overview():
 def test_slug_link_needs_api_key():
     assert ghevaluator.history.find_history_by_slug("https://usegalaxy.eu", "/u/someone/h/some-history") is None
     assert ghevaluator.history.find_history_by_slug("https://usegalaxy.eu", "/histories/list", "key") is None
+
+
+def test_self_comparison_is_exact():
+    """A history compared to itself matches every step with itself"""
+    for path in sorted(DATA.glob("*.json")):
+        wf = load(path.stem)
+        mapping = ghevaluator.match_steps(wf["steps"], wf["steps"])["mapping"]
+        assert all(r == h for r, h in mapping.items()), path.stem
+        assert compare(copy.deepcopy(wf), wf)["score"]["steps"] == 100.0, path.stem
+
+
+def test_identical_runs_are_matched_in_order():
+    """Runs with the same tool, inputs and settings: the 1st matches the 1st, the 2nd the 2nd"""
+    ref = load(REF_ID)
+    k = step_by_tool(ref, "Grouping1")
+    twin = copy.deepcopy(ref["steps"][k])
+    twin["id"] = len(ref["steps"])
+    ref["steps"][str(twin["id"])] = twin
+    hist = copy.deepcopy(ref)
+    mapping = ghevaluator.match_steps(ref["steps"], hist["steps"])["mapping"]
+    assert mapping[int(k)] == int(k)
+    assert mapping[twin["id"]] == twin["id"]

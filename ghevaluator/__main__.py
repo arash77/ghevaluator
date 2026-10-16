@@ -20,7 +20,7 @@ def main(argv=None):
     reference.add_argument('-r', '--reference_history_url', help="URL to reference Galaxy history")
     parser.add_argument('-c', '--csv', type=Path, help="CSV file with several histories to evaluate, with columns 'student name', 'stud hist id', 'ref hist id' and optional 'tutorial name' (ids or URLs)")
     parser.add_argument('-g', '--galaxy_url', default="https://usegalaxy.eu", help="Galaxy URL for history ids in the CSV file (default: https://usegalaxy.eu)")
-    parser.add_argument('-a', '--apikey', help="Galaxy API key for the same instance where the history is, not needed for published or shared histories")
+    parser.add_argument('-a', '--apikey', help="Galaxy API key for the same instance where the history is, not needed for published histories or histories shared via link, needed for histories shared with a specific account")
     parser.add_argument('-o', '--output', help="Path to output folder (default: current folder)", type=Path, default=Path('.'))
     args = parser.parse_args(argv)
 

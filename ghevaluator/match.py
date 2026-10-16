@@ -130,9 +130,11 @@ def match_steps(ref_steps, hist_steps):
 
     Reference tool steps are taken in order. A history step can match a reference step if
     it uses the same tool. Among them, the preferred one has the most inputs coming from steps
-    already matched to the inputs of the reference step, then outputs not deleted, then the most
-    similar parameters, then outputs used by other steps, then the same tool version, then the
-    latest end time.
+    already matched to the inputs of the reference step, then the most similar parameters, then
+    outputs deleted or not like in the reference (i.e. not deleted for usual references), then
+    outputs used by other steps, then the same tool version, then the
+    same position among the runs of the tool (e.g. the 2nd run with the 2nd run), then the latest
+    end time.
     Input steps are matched when they feed matched tool steps, the others by order.
 
     :param ref_steps: steps of the reference workflow (dictionary)
@@ -142,6 +144,17 @@ def match_steps(ref_steps, hist_steps):
     ref = {int(k): s for k, s in ref_steps.items()}
     hist = {int(k): s for k, s in hist_steps.items()}
     consumed = {i for s in hist.values() for i in connection_ids(s)}
+
+    def occurrences(steps):
+        # position of each tool step among the steps with the same tool
+        seen, occ = {}, {}
+        for i in sorted_indexes(steps, inputs=False):
+            key = tool_key(steps[str(i)]["tool_id"])
+            occ[i] = seen.get(key, 0)
+            seen[key] = occ[i] + 1
+        return occ
+
+    ref_occ, hist_occ = occurrences(ref_steps), occurrences(hist_steps)
     mapping = {}
     used = set()
     for r in sorted_indexes(ref_steps, inputs=False):
@@ -159,10 +172,11 @@ def match_steps(ref_steps, hist_steps):
             )
             key = (
                 connected,
-                not hist[h].get("deleted", False),
                 parameter_agreement(ref[r], hist[h]),
+                hist[h].get("deleted", False) == ref[r].get("deleted", False),
                 h in consumed,
                 hist[h].get("tool_id") == ref[r].get("tool_id"),
+                -abs(hist_occ[h] - ref_occ[r]),
                 hist[h].get("end_time") or "",
             )
             if best_key is None or key > best_key:
