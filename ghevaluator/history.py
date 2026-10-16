@@ -1,0 +1,285 @@
+"""
+Read Galaxy histories without changing anything in Galaxy
+
+A history is first downloaded into a plain dictionary (`load_history`), which can
+be saved as JSON, and then turned into a workflow (`build_workflow`) with steps in
+the format of a Galaxy workflow file (`.ga`) plus some history information
+(outputs, job end time, job cache, history of the job).
+"""
+
+import json
+from collections import Counter
+from urllib import parse
+
+import requests
+
+# fields of the job details kept in a loaded history
+JOB_FIELDS = [
+    "id",
+    "tool_id",
+    "tool_version",
+    "history_id",
+    "state",
+    "create_time",
+    "update_time",
+    "copied_from_job_id",
+    "params",
+    "inputs",
+    "outputs",
+    "output_collections",
+]
+
+# fields of the history contents kept in a loaded history
+CONTENT_KEYS = "id,uuid,hid,name,extension,file_size,history_content_type,visible,deleted"
+
+
+def get_hist_info(hist_url, apikey=None):
+    """
+    Get history name and Galaxy URL from history URL
+
+    Supported URLs are the ones with the history id as `id` query parameter
+    (e.g. `/histories/view?id=...` or `/published/history?id=...`) and the
+    `/u/<username>/h/<slug>` links of published histories.
+
+    :param hist_url: URL to Galaxy history
+    :param apikey: optional API key to Galaxy server with history
+    :return: Galaxy URL, history name and id
+    """
+    url = parse.urlparse(hist_url)
+    galaxy_url = url._replace(path="", params="", query="", fragment="").geturl()
+    hist_id = parse.parse_qs(url.query).get("id", [None])[0]
+    if hist_id is None:
+        # /u/<username>/h/<slug> links redirect to a URL with the history id
+        r = requests.get(hist_url, allow_redirects=False)
+        location = parse.urlparse(r.headers.get("Location", ""))
+        hist_id = parse.parse_qs(location.query).get("id", [None])[0]
+    if hist_id is None:
+        raise ValueError(f"Could not find the history id in {hist_url}, use a link with the history id (e.g. /histories/view?id=...)")
+    hist_name = api_get(galaxy_url, f"histories/{hist_id}", apikey, params={"keys": "name"})["name"]
+    return galaxy_url, hist_name, hist_id
+
+
+def api_get(galaxy_url, path, apikey=None, params=None):
+    """
+    GET request to the Galaxy API
+
+    :param galaxy_url: URL of the Galaxy server
+    :param path: path after /api/
+    :param apikey: optional API key
+    :param params: optional query parameters
+    :return: decoded JSON response
+    """
+    headers = {"x-api-key": apikey} if apikey else {}
+    r = requests.get(f"{galaxy_url}/api/{path}", params=params, headers=headers)
+    r.raise_for_status()
+    return r.json()
+
+
+def get_collection_dataset_ids(galaxy_url, hdca_id, apikey=None):
+    """
+    Get the ids and uuids of all datasets inside a dataset collection, nested collections included
+
+    :param galaxy_url: URL of the Galaxy server
+    :param hdca_id: id of the history dataset collection
+    :param apikey: optional API key
+    :return: sorted list of dataset ids and uuids
+    """
+    ids = set()
+
+    def walk(elements):
+        for element in elements:
+            obj = element.get("object") or {}
+            if element.get("element_type") == "dataset_collection":
+                walk(obj.get("elements", []))
+            else:
+                ids.update(v for v in (obj.get("id"), obj.get("uuid")) if v)
+
+    walk(api_get(galaxy_url, f"dataset_collections/{hdca_id}", apikey).get("elements", []))
+    return sorted(ids)
+
+
+def load_history(hist_url, apikey=None):
+    """
+    Download everything needed to rebuild the steps of a history
+
+    :param hist_url: URL to Galaxy history
+    :param apikey: API key to Galaxy server with history, optional for published or shared histories
+    :return: dictionary with history information, extraction summary, contents, collections and jobs
+    """
+    galaxy_url, hist_name, hist_id = get_hist_info(hist_url, apikey)
+    summary = api_get(galaxy_url, f"histories/{hist_id}/extraction_summary", apikey)
+    contents = api_get(
+        galaxy_url,
+        f"histories/{hist_id}/contents",
+        apikey,
+        params={"v": "dev", "keys": CONTENT_KEYS, "limit": 10000},
+    )
+    collections = {}
+    jobs = {}
+    for job in summary["jobs"]:
+        for output in job["outputs"]:
+            if output["history_content_type"] == "dataset_collection" and output["id"] not in collections:
+                collections[output["id"]] = get_collection_dataset_ids(galaxy_url, output["id"], apikey)
+        if job["step_type"] == "tool" and job.get("id") and job["id"] not in jobs:
+            details = api_get(galaxy_url, f"jobs/{job['id']}", apikey, params={"full": "true"})
+            jobs[job["id"]] = {k: details.get(k) for k in JOB_FIELDS}
+    return {
+        "galaxy_url": galaxy_url,
+        "history_id": hist_id,
+        "history_name": hist_name,
+        "history_url": hist_url,
+        "summary": summary,
+        "contents": contents,
+        "collections": collections,
+        "jobs": jobs,
+    }
+
+
+def group_summary_jobs(summary_jobs):
+    """
+    Group the extraction summary entries into steps
+
+    Entries of the same mapped over job (same implicit collection jobs id) are merged:
+    in copied histories, a mapped over step can be listed once per collection element.
+    Entries Galaxy can not turn into a workflow step are skipped.
+
+    :param summary_jobs: list of jobs from the extraction summary
+    :return: list of entries, each with the outputs of all merged entries
+    """
+    steps = []
+    by_icj = {}
+    for job in summary_jobs:
+        if job.get("invalid"):
+            continue
+        icj = job.get("implicit_collection_jobs_id")
+        if icj and icj in by_icj:
+            by_icj[icj]["outputs"].extend(job["outputs"])
+            continue
+        entry = dict(job, outputs=list(job["outputs"]))
+        if icj:
+            by_icj[icj] = entry
+        steps.append(entry)
+    return steps
+
+
+def build_workflow(history):
+    """
+    Turn a loaded history into a workflow, with steps in the format of a Galaxy workflow file
+
+    Besides the usual keys, tool steps have `job_id`, `history_id` (history where the job ran),
+    `cached` (job result reused from the job cache), `end_time` and all steps have `outputs`.
+
+    :param history: dictionary from `load_history`
+    :return: dictionary with the workflow corresponding to the Galaxy history
+    """
+    contents = {c["id"]: c for c in history["contents"]}
+    steps = {}
+    producers = {}  # dataset/collection id or uuid -> index of the step creating it
+    for job in group_summary_jobs(history["summary"]["jobs"]):
+        index = len(steps)
+        outputs = []
+        for output in job["outputs"]:
+            content = contents.get(output["id"], {})
+            outputs.append({
+                "id": output["id"],
+                "hid": output.get("hid"),
+                "name": output.get("name"),
+                "type": output["history_content_type"],
+                "extension": content.get("extension"),
+                "file_size": content.get("file_size"),
+            })
+            producers[output["id"]] = index
+            if content.get("uuid"):
+                producers[content["uuid"]] = index
+            for ds_id in history["collections"].get(output["id"], []):
+                producers.setdefault(ds_id, index)
+        if job["step_type"] == "input_dataset":
+            steps[str(index)] = {"id": index, "name": "Input dataset", "type": "data_input", "tool_id": None, "input_connections": {}, "outputs": outputs}
+            continue
+        if job["step_type"] == "input_collection":
+            steps[str(index)] = {"id": index, "name": "Input dataset collection", "type": "data_collection_input", "tool_id": None, "input_connections": {}, "outputs": outputs}
+            continue
+        # for mapped over steps, the summary gives one of the jobs
+        job_details = history["jobs"][job["id"]]
+        parameters = dict(job_details["params"])
+        input_connections = {}
+        for name, inp in job_details["inputs"].items():
+            producer = producers.get(inp.get("id"), producers.get(inp.get("uuid")))
+            input_connections[name] = {} if producer is None else {"id": producer, "output_name": "output"}
+            if "|" not in name:
+                parameters.setdefault(name, "null")
+        steps[str(index)] = {
+            "id": index,
+            "name": job["tool_name"],
+            "type": "tool",
+            "tool_id": job["tool_id"],
+            "tool_version": job["tool_version"],
+            "tool_state": json.dumps(parameters),
+            "input_connections": input_connections,
+            "outputs": outputs,
+            "job_id": job["id"],
+            "history_id": job_details["history_id"],
+            "cached": bool(job_details.get("copied_from_job_id")),
+            "end_time": job_details.get("update_time"),
+        }
+    return {
+        "a_galaxy_workflow": "true",
+        "name": f"{history['history_name']} workflow",
+        "history_id": history["history_id"],
+        "main_history_id": get_main_history_id(history["history_id"], steps),
+        "galaxy_url": history["galaxy_url"],
+        "steps": steps,
+    }
+
+
+def get_main_history_id(hist_id, steps):
+    """
+    Find the history where the analysis was run
+
+    It is the history itself if at least one job ran in it, otherwise (e.g. for an imported
+    copy of a history) the history where most jobs ran.
+
+    :param hist_id: id of the history
+    :param steps: workflow steps of the history
+    :return: history id
+    """
+    job_histories = Counter(s["history_id"] for s in steps.values() if s.get("history_id"))
+    if not job_histories or hist_id in job_histories:
+        return hist_id
+    return job_histories.most_common(1)[0][0]
+
+
+def get_workflow_from_history(hist_url, apikey=None):
+    """
+    Build a workflow from a Galaxy history, without changing anything in Galaxy
+
+    The steps come from the history extraction summary (the jobs and inputs Galaxy
+    would use to extract a workflow) and the connections from the inputs of the jobs.
+
+    :param hist_url: URL to Galaxy history
+    :param apikey: API key to Galaxy server with history, optional for published or shared histories
+    :return: dictionary with the workflow corresponding to Galaxy history
+    """
+    return build_workflow(load_history(hist_url, apikey))
+
+
+def fetch_dataset_text(galaxy_url, dataset_id, apikey=None, max_bytes=200000):
+    """
+    Get the beginning of a dataset content as text
+
+    :param galaxy_url: URL of the Galaxy server
+    :param dataset_id: id of the dataset
+    :param apikey: optional API key
+    :param max_bytes: maximum number of bytes to read
+    :return: text or None if the dataset can not be read or is not text
+    """
+    headers = {"x-api-key": apikey} if apikey else {}
+    try:
+        with requests.get(f"{galaxy_url}/api/datasets/{dataset_id}/display", headers=headers, stream=True, timeout=60) as r:
+            r.raise_for_status()
+            data = r.raw.read(max_bytes, decode_content=True)
+    except requests.RequestException:
+        return None
+    if b"\0" in data:
+        return None
+    return data.decode("utf-8", errors="replace")

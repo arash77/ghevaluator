@@ -18,7 +18,6 @@ classifiers = [
 ]
 
 dependencies = [
-    "bioblend",
     "Jinja2",
     "requests",
 ]
@@ -38,5 +37,5 @@ build-backend = "setuptools.build_meta"
 find = {}
 
 [tool.setuptools.package-data]
-ghevaluator = ["templates/*.html"]
+ghevaluator = ["templates/*.html", "templates/*.md"]
 

@@ -310,7 +310,7 @@ def test_generate_html_report_content():
     assert 'fa-exclamation-triangle' in content
     assert 'FastQC' in content
     assert '1.0.2+galaxy0' in content
-    assert 'Occurence 1' in content
+    assert 'Occurrence 1' in content
 
 
 def test_generate_report_files():
@@ -320,17 +320,21 @@ def test_generate_report_files():
     hist_wf = ghevaluator.get_workflow_from_history(HIST_URL, APIKEY)
     report = ghevaluator.compare_workflows(hist_wf, ref_wf, {'inputs': {'history': HIST_URL, 'workflow': WF_URL}})
     ghevaluator.generate_report_files(report, Path("."))
-    assert Path("report.json").exists
+    assert Path("report.json").exists()
     Path("report.json").unlink()
-    assert Path("report.html").exists
+    assert Path("report.html").exists()
     Path("report.html").unlink()
+    assert Path("report.md").exists()
+    Path("report.md").unlink()
 
 
 def test_ghevaluator():
     """
     """
     ghevaluator.ghevaluator(HIST_URL, WF_URL, APIKEY, Path("."))
-    assert Path("report.json").exists
+    assert Path("report.json").exists()
     Path("report.json").unlink()
-    assert Path("report.html").exists
+    assert Path("report.html").exists()
     Path("report.html").unlink()
+    assert Path("report.md").exists()
+    Path("report.md").unlink()
