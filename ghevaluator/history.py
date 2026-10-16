@@ -117,11 +117,18 @@ def load_history(hist_url, apikey=None):
     collections = {}
     jobs = {}
     for job in summary["jobs"]:
+        # jobs and collections that can not be read (e.g. copied from a private history) are skipped
         for output in job["outputs"]:
             if output["history_content_type"] == "dataset_collection" and output["id"] not in collections:
-                collections[output["id"]] = get_collection_dataset_ids(galaxy_url, output["id"], apikey)
+                try:
+                    collections[output["id"]] = get_collection_dataset_ids(galaxy_url, output["id"], apikey)
+                except requests.HTTPError:
+                    collections[output["id"]] = []
         if job["step_type"] == "tool" and job.get("id") and job["id"] not in jobs:
-            details = api_get(galaxy_url, f"jobs/{job['id']}", apikey, params={"full": "true"})
+            try:
+                details = api_get(galaxy_url, f"jobs/{job['id']}", apikey, params={"full": "true"})
+            except requests.HTTPError:
+                continue
             jobs[job["id"]] = {k: details.get(k) for k in JOB_FIELDS}
     return {
         "galaxy_url": galaxy_url,
@@ -167,8 +174,8 @@ def build_workflow(history):
     Turn a loaded history into a workflow, with steps in the format of a Galaxy workflow file
 
     Besides the usual keys, tool steps have `job_id`, `history_id` (history where the job ran),
-    `cached` (job result reused from the job cache), `end_time` and all steps have `outputs`
-    and `deleted` (all outputs deleted).
+    `cached` (job result reused from the job cache), `end_time`, `inaccessible` (job details can
+    not be read) and all steps have `outputs` and `deleted` (all outputs deleted).
 
     :param history: dictionary from `load_history`
     :return: dictionary with the workflow corresponding to the Galaxy history
@@ -204,7 +211,26 @@ def build_workflow(history):
             steps[str(index)] = {"id": index, "name": "Input dataset collection", "type": "data_collection_input", "tool_id": None, "input_connections": {}, "outputs": outputs, "deleted": deleted}
             continue
         # for mapped over steps, the summary gives one of the jobs
-        job_details = history["jobs"][job["id"]]
+        job_details = history["jobs"].get(job["id"])
+        if job_details is None:
+            # job not accessible: only the tool and the outputs are known
+            steps[str(index)] = {
+                "id": index,
+                "name": job["tool_name"],
+                "type": "tool",
+                "tool_id": job["tool_id"],
+                "tool_version": job["tool_version"],
+                "tool_state": "{}",
+                "input_connections": {},
+                "outputs": outputs,
+                "deleted": deleted,
+                "job_id": job["id"],
+                "history_id": None,
+                "inaccessible": True,
+                "cached": False,
+                "end_time": None,
+            }
+            continue
         parameters = dict(job_details["params"])
         input_connections = {}
         for name, inp in job_details["inputs"].items():

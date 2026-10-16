@@ -101,6 +101,10 @@
                         <li>Reference {{ report.inputs.reference_type or "workflow" }}: <a href="{{ report.inputs.workflow }}">{{ report.inputs.workflow }}</a></li>
                     </ul>
 
+                {% if report.all_steps_from_history %}
+                <div class="notification is-warning">All steps of this history ran in history {{ report.all_steps_from_history }}: the history is a copy of a whole history. This is expected for a history imported by a tutor, not for a history shared by a student.</div>
+                {% endif %}
+
                 {% if report.score %}
                 <h2>Summary</h2>
                     <table class="table is-fullwidth">
@@ -111,7 +115,7 @@
                         <tr><td class="has-text-left">Missing steps</td><td class="has-text-left">{{ report.score.missing_steps }}</td></tr>
                         <tr><td class="has-text-left">Extra steps (not deleted)</td><td class="has-text-left">{{ report.score.extra_steps }}</td></tr>
                         <tr><td class="has-text-left">Deleted steps</td><td class="has-text-left">{{ report.score.deleted_steps }}</td></tr>
-                        <tr><td class="has-text-left">Steps copied from another history</td><td class="has-text-left">{{ report.score.copied_steps }}</td></tr>
+                        <tr><td class="has-text-left">Steps copied from another or a private history</td><td class="has-text-left">{{ report.score.copied_steps }}</td></tr>
                         <tr><td class="has-text-left">Steps from the job cache</td><td class="has-text-left">{{ report.score.cached_steps }}</td></tr>
                     </table>
                     <p>A missing step counts 0. A step found counts 50 %, plus 25 % if its inputs come from the right steps and up to 25 % for its parameters.</p>

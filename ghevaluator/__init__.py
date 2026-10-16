@@ -339,7 +339,10 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
         s_report['cached'] = bool(raw_hist and raw_hist.get('cached'))
         s_report['deleted'] = bool(raw_hist and raw_hist.get('deleted'))
         copied_from = raw_hist.get('history_id') if raw_hist else None
-        s_report['copied_from_history'] = copied_from if copied_from and main_history and copied_from != main_history else None
+        if raw_hist and raw_hist.get('inaccessible'):
+            s_report['copied_from_history'] = 'not accessible'
+        else:
+            s_report['copied_from_history'] = copied_from if copied_from and main_history and copied_from != main_history else None
         if raw_hist and 'outputs' in raw_ref:
             s_report['output_formats'] = {
                 'workflow': output_formats(raw_ref),
@@ -372,12 +375,17 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
         'cached': bool(hist_steps[str(h)].get('cached')),
         'deleted': bool(hist_steps[str(h)].get('deleted')),
     } for h in matching['extra']]
-    # Steps whose job ran in another history, i.e. results copied from someone else
+    # Steps whose job ran in another history, i.e. results copied from someone else,
+    # or whose job can not be read, usually because it ran in a private history of someone else
     report['copied_steps'] = [{
         'order': k,
         'tool': s['name'],
-        'history': s['history_id'],
-    } for k, s in hist_steps.items() if s.get('history_id') and main_history and s['history_id'] != main_history]
+        'history': 'not accessible' if s.get('inaccessible') else s['history_id'],
+    } for k, s in hist_steps.items() if s.get('inaccessible') or (s.get('history_id') and main_history and s['history_id'] != main_history)]
+    # All jobs ran in another history: the history is a copy of a whole history
+    report['history_id'] = hist_wf.get('history_id')
+    report['main_history_id'] = main_history
+    report['all_steps_from_history'] = main_history if main_history and main_history != hist_wf.get('history_id') else None
     if 'outputs' in next(iter(ref_steps.values()), {}):
         report['final_outputs'] = compare_final_outputs(ref_wf, hist_wf, fetch_text)
     scores = [step_score(c) for c in comparison.values()]
@@ -390,6 +398,7 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
         'deleted_steps': sum(1 for s in hist_steps.values() if s['type'] == 'tool' and s.get('deleted')),
         'copied_steps': len(report['copied_steps']),
         'cached_steps': sum(1 for s in hist_steps.values() if s.get('cached')),
+        'all_steps_from_history': report['all_steps_from_history'],
     }
     return report
 

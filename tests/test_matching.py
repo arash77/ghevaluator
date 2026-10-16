@@ -178,7 +178,30 @@ def test_imported_copy_is_not_flagged_as_copied():
     hist["history_id"] = "tutor_copy"
     hist["main_history_id"] = ghevaluator.history.get_main_history_id("tutor_copy", hist["steps"])
     assert hist["main_history_id"] == REF_ID
-    assert compare(hist, ref)["score"]["copied_steps"] == 0
+    report = compare(hist, ref)
+    assert report["score"]["copied_steps"] == 0
+    # but it is said, a student could also share a copy of someone else's whole history
+    assert report["score"]["all_steps_from_history"] == REF_ID
+    report["inputs"] = {"history": "h", "workflow": "w"}
+    assert f"All steps of this history ran in history {REF_ID}" in ghevaluator.generate_markdown_report_content(report)
+    assert compare(load(REF_ID), ref)["score"]["all_steps_from_history"] is None
+
+
+def test_inaccessible_job():
+    """A job that can not be read (e.g. copied from a private history) does not stop the evaluation"""
+    with (DATA / f"{STUDENT_ID}.json").open() as f:
+        history = json.load(f)
+    job = next(j for j in history["summary"]["jobs"] if j["step_type"] == "tool" and "gops_intersect" in j["tool_id"])
+    del history["jobs"][job["id"]]
+    hist = ghevaluator.build_workflow(history)
+    step = next(s for s in hist["steps"].values() if s.get("job_id") == job["id"])
+    assert step["inaccessible"]
+    report = compare(hist, load(REF_ID))
+    assert report["score"]["copied_steps"] == 1
+    assert report["copied_steps"][0]["history"] == "not accessible"
+    intersect = next(c for c in report["comparison_given_reference_workflow_order"].values() if c["id"]["workflow"] == "gops_intersect_1")
+    assert intersect["status"] == "matched"
+    assert intersect["copied_from_history"] == "not accessible"
 
 
 def test_real_other_run():

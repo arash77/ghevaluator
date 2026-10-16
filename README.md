@@ -80,7 +80,7 @@ History URLs can be links with the history id (`/histories/view?id=...`, `/publi
 
 - **Steps**: steps of the history are matched to the steps of the reference by tool and by the steps their inputs come from, not by their order. Steps run again, run in another order or not in the reference are handled. For each reference step, the report gives the matched history step, the tool version, the parameters and whether its inputs come from the right steps.
 - **Missing and extra steps**: reference steps not found in the history, and history steps not in the reference. Steps whose outputs were all deleted are reported but not counted as extra steps.
-- **Copied results**: steps whose job ran in another history, i.e. results copied from someone else's history. A history imported as a whole (e.g. by a tutor) is not flagged.
+- **Copied results**: steps whose job ran in another history, i.e. results copied from someone else's history, and steps whose job can not be read, usually because it ran in someone else's private history. When all steps ran in another history, the report says so: this is expected for a history imported by a tutor, not for a history shared by a student.
 - **Job cache**: steps whose result was reused from an earlier job.
 - **Outputs** (reference history only): output formats of matched steps, and the last step of the reference compared to the last 5 steps of the history (by job end time), including the similarity of the output content for text datasets.
 

@@ -4,7 +4,10 @@
 
 - Galaxy history: {{ report.inputs.history }}
 - Reference {{ report.inputs.reference_type or "workflow" }}: {{ report.inputs.workflow }}
-{% if report.score %}
+{% if report.all_steps_from_history %}
+> ⚠️ All steps of this history ran in history {{ report.all_steps_from_history }}: the history is a copy of a whole history. This is expected for a history imported by a tutor, not for a history shared by a student.
+{% endif %}
+{%- if report.score %}
 ## Summary
 
 | | |
@@ -18,7 +21,7 @@
 | Missing steps | {{ report.score.missing_steps }} |
 | Extra steps (not deleted) | {{ report.score.extra_steps }} |
 | Deleted steps | {{ report.score.deleted_steps }} |
-| Steps copied from another history | {{ report.score.copied_steps }} |
+| Steps copied from another or a private history | {{ report.score.copied_steps }} |
 | Steps from the job cache | {{ report.score.cached_steps }} |
 
 A missing step counts 0. A step found counts 50 %, plus 25 % if its inputs come from the right steps and up to 25 % for its parameters.
