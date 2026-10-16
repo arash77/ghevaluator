@@ -109,7 +109,8 @@
                         <tr><td class="has-text-left">Final output similarity</td><td class="has-text-left">{{ report.score.final_output }} %</td></tr>
                         {% endif %}
                         <tr><td class="has-text-left">Missing steps</td><td class="has-text-left">{{ report.score.missing_steps }}</td></tr>
-                        <tr><td class="has-text-left">Extra steps</td><td class="has-text-left">{{ report.score.extra_steps }}</td></tr>
+                        <tr><td class="has-text-left">Extra steps (not deleted)</td><td class="has-text-left">{{ report.score.extra_steps }}</td></tr>
+                        <tr><td class="has-text-left">Deleted steps</td><td class="has-text-left">{{ report.score.deleted_steps }}</td></tr>
                         <tr><td class="has-text-left">Steps copied from another history</td><td class="has-text-left">{{ report.score.copied_steps }}</td></tr>
                         <tr><td class="has-text-left">Steps from the job cache</td><td class="has-text-left">{{ report.score.cached_steps }}</td></tr>
                     </table>
@@ -140,7 +141,7 @@
 
                 {% if report.final_outputs %}
                     <h3>Final output</h3>
-                    <p>Last step of the reference: step {{ report.final_outputs.reference_step.order }}, {{ report.final_outputs.reference_step.tool }} ({{ report.final_outputs.reference_step.formats | join(", ") }}), compared to the last steps of the history.</p>
+                    <p>Last step of the reference: step {{ report.final_outputs.reference_step.order }}, {{ report.final_outputs.reference_step.tool }} ({{ report.final_outputs.reference_step.formats | join(", ") }}), compared to the last steps of the history.{% if report.final_outputs.note %} Note: {{ report.final_outputs.note }}.{% endif %}</p>
                     <table class="table is-fullwidth">
                         <tr class="th">
                             <th>Step</th>
@@ -170,9 +171,9 @@
                 {% if report.extra_steps %}
                     <h3>Steps not in the reference</h3>
                     <table class="table is-fullwidth">
-                        <tr class="th"><th>Step</th><th>Tool</th><th>Version</th><th>Job cache</th></tr>
+                        <tr class="th"><th>Step</th><th>Tool</th><th>Version</th><th>Job cache</th><th>Deleted</th></tr>
                         {% for s in report.extra_steps %}
-                        <tr><td class="has-text-left">{{ s.order }}</td><td class="has-text-left">{{ s.tool }}</td><td class="has-text-left">{{ s.version }}</td><td class="has-text-left">{% if s.cached %}yes{% endif %}</td></tr>
+                        <tr><td class="has-text-left">{{ s.order }}</td><td class="has-text-left">{{ s.tool }}</td><td class="has-text-left">{{ s.version }}</td><td class="has-text-left">{% if s.cached %}yes{% endif %}</td><td class="has-text-left">{% if s.deleted %}yes{% endif %}</td></tr>
                         {% endfor %}
                     </table>
                 {% endif %}

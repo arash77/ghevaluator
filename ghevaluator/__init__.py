@@ -238,13 +238,17 @@ def compare_final_outputs(ref_wf, hist_wf, fetch_text=None, nb_last=5):
     :param nb_last: number of last history steps to compare
     :return: dictionary with the comparison, None if the reference has no job end time
     """
-    ref_tools = [s for s in ref_wf['steps'].values() if s['type'] == 'tool' and s.get('end_time')]
+    def last_steps(wf):
+        # deleted steps are left out, unless all steps were deleted
+        steps = [s for s in wf['steps'].values() if s['type'] == 'tool' and s.get('end_time')]
+        kept = [s for s in steps if not s.get('deleted')] or steps
+        return sorted(kept, key=lambda s: s['end_time'], reverse=True)
+
+    ref_tools = last_steps(ref_wf)
     if not ref_tools:
         return None
-    ref_last = max(ref_tools, key=lambda s: s['end_time'])
-    hist_last = sorted(
-        (s for s in hist_wf['steps'].values() if s['type'] == 'tool' and s.get('end_time')),
-        key=lambda s: s['end_time'], reverse=True)[:nb_last]
+    ref_last = ref_tools[0]
+    hist_last = last_steps(hist_wf)[:nb_last]
 
     def first_dataset_text(wf, step):
         datasets = [o for o in step.get('outputs', []) if o['type'] == 'dataset']
@@ -253,6 +257,12 @@ def compare_final_outputs(ref_wf, hist_wf, fetch_text=None, nb_last=5):
         return fetch_text(wf['galaxy_url'], datasets[0]['id'])
 
     ref_text = first_dataset_text(ref_wf, ref_last)
+    if fetch_text is None:
+        note = 'content not compared'
+    elif ref_text is None:
+        note = 'reference output can not be read as text (e.g. purged, binary or a collection)'
+    else:
+        note = None
     candidates = []
     for step in hist_last:
         text = first_dataset_text(hist_wf, step) if ref_text is not None else None
@@ -270,6 +280,7 @@ def compare_final_outputs(ref_wf, hist_wf, fetch_text=None, nb_last=5):
         'candidates': candidates,
         'best_content_similarity': max(similarities) if similarities else None,
         'tool_found': any(c['same_tool'] for c in candidates),
+        'note': note,
     }
 
 
@@ -326,6 +337,7 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
             'same': bool(raw_hist and same_connections(raw_ref, raw_hist, mapping)),
         }
         s_report['cached'] = bool(raw_hist and raw_hist.get('cached'))
+        s_report['deleted'] = bool(raw_hist and raw_hist.get('deleted'))
         copied_from = raw_hist.get('history_id') if raw_hist else None
         s_report['copied_from_history'] = copied_from if copied_from and main_history and copied_from != main_history else None
         if raw_hist and 'outputs' in raw_ref:
@@ -358,6 +370,7 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
         'id': hist_by_order[str(h)]['id'],
         'version': hist_by_order[str(h)]['version'],
         'cached': bool(hist_steps[str(h)].get('cached')),
+        'deleted': bool(hist_steps[str(h)].get('deleted')),
     } for h in matching['extra']]
     # Steps whose job ran in another history, i.e. results copied from someone else
     report['copied_steps'] = [{
@@ -373,7 +386,8 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
         'steps': round(100 * sum(scores) / len(scores), 1) if scores else None,
         'final_output': round(100 * final['best_content_similarity'], 1) if final.get('best_content_similarity') is not None else None,
         'missing_steps': len(matching['missing']),
-        'extra_steps': len(matching['extra']),
+        'extra_steps': sum(1 for s in report['extra_steps'] if not s['deleted']),
+        'deleted_steps': sum(1 for s in hist_steps.values() if s['type'] == 'tool' and s.get('deleted')),
         'copied_steps': len(report['copied_steps']),
         'cached_steps': sum(1 for s in hist_steps.values() if s.get('cached')),
     }

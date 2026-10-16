@@ -130,8 +130,9 @@ def match_steps(ref_steps, hist_steps):
 
     Reference tool steps are taken in order. A history step can match a reference step if
     it uses the same tool. Among them, the preferred one has the most inputs coming from steps
-    already matched to the inputs of the reference step, then the most similar parameters,
-    then outputs used by other steps, then the same tool version, then the latest end time.
+    already matched to the inputs of the reference step, then outputs not deleted, then the most
+    similar parameters, then outputs used by other steps, then the same tool version, then the
+    latest end time.
     Input steps are matched when they feed matched tool steps, the others by order.
 
     :param ref_steps: steps of the reference workflow (dictionary)
@@ -158,6 +159,7 @@ def match_steps(ref_steps, hist_steps):
             )
             key = (
                 connected,
+                not hist[h].get("deleted", False),
                 parameter_agreement(ref[r], hist[h]),
                 h in consumed,
                 hist[h].get("tool_id") == ref[r].get("tool_id"),

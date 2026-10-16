@@ -188,7 +188,10 @@ def test_real_other_run():
     report = compare(hist, ref)
     missing = [c["id"]["workflow"] for c in report["comparison_given_reference_workflow_order"].values() if c["status"] == "missing"]
     assert missing == ["tp_sort_header_tool", "tp_sort_header_tool"]
-    assert report["score"]["extra_steps"] == 4
+    # 4 steps not in the reference, 3 of them deleted by the student
+    assert len(report["extra_steps"]) == 4
+    assert report["score"]["extra_steps"] == 1
+    assert report["score"]["deleted_steps"] == 3
     matched = [c for c in report["comparison_given_reference_workflow_order"].values() if c["status"] == "matched"]
     assert all(c["inputs_connection"]["same"] for c in matched)
     assert report["final_outputs"]["tool_found"] is False
@@ -198,7 +201,8 @@ def test_final_output_content():
     ref = load(REF_ID)
     hist = copy.deepcopy(ref)
     texts = {"ref": "a\t1\nb\t2\nc\t3\n", "same": "a\t1\nb\t2\nc\t3\n", "other": "a\t1\nb\t9\nc\t3\n"}
-    last = max((s for s in ref["steps"].values() if s["type"] == "tool"), key=lambda s: s["end_time"])
+    # the last step of the reference which was not deleted
+    last = max((s for s in ref["steps"].values() if s["type"] == "tool" and not s["deleted"]), key=lambda s: s["end_time"])
     # make the history outputs different datasets from the reference outputs
     for step in hist["steps"].values():
         for o in step["outputs"]:

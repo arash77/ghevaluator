@@ -16,7 +16,8 @@
 | Data inputs (reference / history) | {{ report.data_inputs.workflow }} / {{ report.data_inputs.history }} |
 | Tool steps (reference / history) | {{ report.steps.workflow }} / {{ report.steps.history }} |
 | Missing steps | {{ report.score.missing_steps }} |
-| Extra steps | {{ report.score.extra_steps }} |
+| Extra steps (not deleted) | {{ report.score.extra_steps }} |
+| Deleted steps | {{ report.score.deleted_steps }} |
 | Steps copied from another history | {{ report.score.copied_steps }} |
 | Steps from the job cache | {{ report.score.cached_steps }} |
 
@@ -30,7 +31,7 @@ A missing step counts 0. A step found counts 50 %, plus 25 % if its inputs come 
 {%- if s.status == "missing" %}
 | {{ s.order.workflow }} | {{ cell(s.tool.workflow) }} | missing | {{ cell(s.version.workflow) }} | | | |
 {%- else %}
-| {{ s.order.workflow }} | {{ cell(s.tool.workflow) }} | {{ s.order.history }} | {{ cell(s.version.workflow) }} / {{ cell(s.version.history) }} {% if not s.version.same %}⚠️{% endif %} | {{ yes(s.inputs_connection.same) }} | {{ s.parameters.wrong }} / {{ s.parameters.number.workflow }} | {% if s.output_formats and not s.output_formats.same %}output formats {{ s.output_formats.history | join(", ") }} instead of {{ s.output_formats.workflow | join(", ") }}. {% endif %}{% if s.cached %}job cache. {% endif %}{% if s.copied_from_history %}copied from history {{ s.copied_from_history }}.{% endif %} |
+| {{ s.order.workflow }} | {{ cell(s.tool.workflow) }} | {{ s.order.history }} | {{ cell(s.version.workflow) }} / {{ cell(s.version.history) }} {% if not s.version.same %}⚠️{% endif %} | {{ yes(s.inputs_connection.same) }} | {{ s.parameters.wrong }} / {{ s.parameters.number.workflow }} | {% if s.output_formats and not s.output_formats.same %}output formats {{ s.output_formats.history | join(", ") }} instead of {{ s.output_formats.workflow | join(", ") }}. {% endif %}{% if s.cached %}job cache. {% endif %}{% if s.deleted %}outputs deleted. {% endif %}{% if s.copied_from_history %}copied from history {{ s.copied_from_history }}.{% endif %} |
 {%- endif %}
 {%- endfor %}
 {% for step_num, s in report.comparison_given_reference_workflow_order.items() %}
@@ -48,7 +49,7 @@ A missing step counts 0. A step found counts 50 %, plus 25 % if its inputs come 
 {%- if report.final_outputs %}
 ## Final output
 
-Last step of the reference: step {{ report.final_outputs.reference_step.order }}, {{ report.final_outputs.reference_step.tool }} ({{ report.final_outputs.reference_step.formats | join(", ") }}), compared to the last steps of the history.
+Last step of the reference: step {{ report.final_outputs.reference_step.order }}, {{ report.final_outputs.reference_step.tool }} ({{ report.final_outputs.reference_step.formats | join(", ") }}), compared to the last steps of the history.{% if report.final_outputs.note %} Note: {{ report.final_outputs.note }}.{% endif %}
 
 | History step | Tool | Same tool | Same output formats | Content similarity |
 |---|---|---|---|---|
@@ -59,10 +60,10 @@ Last step of the reference: step {{ report.final_outputs.reference_step.order }}
 {%- if report.extra_steps %}
 ## Steps not in the reference
 
-| History step | Tool | Version | Job cache |
-|---|---|---|---|
+| History step | Tool | Version | Job cache | Deleted |
+|---|---|---|---|---|
 {%- for s in report.extra_steps %}
-| {{ s.order }} | {{ cell(s.tool) }} | {{ cell(s.version) }} | {% if s.cached %}yes{% endif %} |
+| {{ s.order }} | {{ cell(s.tool) }} | {{ cell(s.version) }} | {% if s.cached %}yes{% endif %} | {% if s.deleted %}yes{% endif %} |
 {%- endfor %}
 {% endif %}
 {%- if report.copied_steps %}

@@ -167,7 +167,8 @@ def build_workflow(history):
     Turn a loaded history into a workflow, with steps in the format of a Galaxy workflow file
 
     Besides the usual keys, tool steps have `job_id`, `history_id` (history where the job ran),
-    `cached` (job result reused from the job cache), `end_time` and all steps have `outputs`.
+    `cached` (job result reused from the job cache), `end_time` and all steps have `outputs`
+    and `deleted` (all outputs deleted).
 
     :param history: dictionary from `load_history`
     :return: dictionary with the workflow corresponding to the Galaxy history
@@ -187,17 +188,20 @@ def build_workflow(history):
                 "type": output["history_content_type"],
                 "extension": content.get("extension"),
                 "file_size": content.get("file_size"),
+                "deleted": bool(output.get("deleted") or content.get("deleted")),
             })
             producers[output["id"]] = index
             if content.get("uuid"):
                 producers[content["uuid"]] = index
             for ds_id in history["collections"].get(output["id"], []):
                 producers.setdefault(ds_id, index)
+        # a step whose outputs were all deleted is usually an attempt that was thrown away
+        deleted = bool(outputs) and all(o["deleted"] for o in outputs)
         if job["step_type"] == "input_dataset":
-            steps[str(index)] = {"id": index, "name": "Input dataset", "type": "data_input", "tool_id": None, "input_connections": {}, "outputs": outputs}
+            steps[str(index)] = {"id": index, "name": "Input dataset", "type": "data_input", "tool_id": None, "input_connections": {}, "outputs": outputs, "deleted": deleted}
             continue
         if job["step_type"] == "input_collection":
-            steps[str(index)] = {"id": index, "name": "Input dataset collection", "type": "data_collection_input", "tool_id": None, "input_connections": {}, "outputs": outputs}
+            steps[str(index)] = {"id": index, "name": "Input dataset collection", "type": "data_collection_input", "tool_id": None, "input_connections": {}, "outputs": outputs, "deleted": deleted}
             continue
         # for mapped over steps, the summary gives one of the jobs
         job_details = history["jobs"][job["id"]]
@@ -217,6 +221,7 @@ def build_workflow(history):
             "tool_state": json.dumps(parameters),
             "input_connections": input_connections,
             "outputs": outputs,
+            "deleted": deleted,
             "job_id": job["id"],
             "history_id": job_details["history_id"],
             "cached": bool(job_details.get("copied_from_job_id")),
