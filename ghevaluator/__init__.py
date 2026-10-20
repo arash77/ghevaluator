@@ -449,8 +449,9 @@ def summarize_report(report):
     copied = [s['tool'] for s in report['copied_steps']]
     if copied and not report.get('all_steps_from_history'):
         sentences.append(f"Results copied from another history: {count_names(copied)}.")
-    if report['score']['cached_steps']:
-        sentences.append(f"{report['score']['cached_steps']} steps reused results from earlier jobs (job cache).")
+    cached = report['score']['cached_steps']
+    if cached:
+        sentences.append(f"{cached} step{'s' if cached > 1 else ''} reused the result of an earlier job (job cache).")
     final = report.get('final_outputs')
     if final and final.get('best_content_similarity') is not None:
         sentences.append(f"Final result {round(100 * final['best_content_similarity'])} % similar to the reference.")
