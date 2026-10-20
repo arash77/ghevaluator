@@ -57,7 +57,7 @@ def test_group_summary_jobs_merges_mapped_over_entries():
 
 
 def test_normalize_parameters():
-    assert ghevaluator.clean_parameters('{"a": "\\"7\\"", "b": 7, "c": "null", "d": {"__class__": "ConnectedValue"}, "chromInfo": "x"}') == {
+    assert ghevaluator.clean_parameters('{"a": "\\"7\\"", "b": 7, "c": "null", "d": {"__class__": "ConnectedValue"}, "chromInfo": "x", "__use_cached_job__": "true"}') == {
         "a": "7", "b": "7", "c": None, "d": None}
 
 

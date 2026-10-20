@@ -11,7 +11,7 @@ from difflib import SequenceMatcher
 INPUT_TYPES = ("data_input", "data_collection_input", "parameter_input")
 
 # parameters depending on the Galaxy server or the run, not on the analysis
-IGNORED_PARAMETERS = ["__page__", "__input_ext", "chromInfo", "__rerun_remap_job_id__", "dbkey", "__job_resource", "__workflow_invocation_uuid__"]
+IGNORED_PARAMETERS = ["__page__", "__input_ext", "chromInfo", "__rerun_remap_job_id__", "dbkey", "__job_resource", "__workflow_invocation_uuid__", "__use_cached_job__"]
 
 
 def is_input_step(step):
