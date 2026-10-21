@@ -337,6 +337,7 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
             'same': bool(raw_hist and same_connections(raw_ref, raw_hist, mapping)),
         }
         s_report['cached'] = bool(raw_hist and raw_hist.get('cached'))
+        s_report['cached_reference'] = bool(raw_ref.get('cached'))
         s_report['deleted'] = bool(raw_hist and raw_hist.get('deleted'))
         copied_from = raw_hist.get('history_id') if raw_hist else None
         if raw_hist and raw_hist.get('inaccessible'):

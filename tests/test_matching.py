@@ -169,6 +169,9 @@ def test_copied_and_cached_steps():
     flags = {c["id"]["workflow"]: c for c in report["comparison_given_reference_workflow_order"].values()}
     assert flags["Grouping1"]["copied_from_history"] == "someone_else"
     assert flags["get_flanks1"]["cached"]
+    assert not flags["get_flanks1"]["cached_reference"]
+    self_flags = {c["id"]["workflow"]: c for c in compare(hist, hist)["comparison_given_reference_workflow_order"].values()}
+    assert self_flags["get_flanks1"]["cached"] and self_flags["get_flanks1"]["cached_reference"]
 
 
 def test_imported_copy_is_not_flagged_as_copied():
