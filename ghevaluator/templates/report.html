@@ -65,6 +65,14 @@
                     <td class="has-text-left">{{ status(same_cache, "fa-exclamation-triangle", "has-text-warning") }}</td>
                 </tr>
                 {% endif %}
+                {% if step_res.failed_elements %}
+                <tr class="missed">
+                    <td class="has-text-left">Failed collection elements</td>
+                    <td class="has-text-left"></td>
+                    <td class="has-text-left">{{ step_res.failed_elements }} of {{ step_res.elements }}</td>
+                    <td class="has-text-left">{{ status(false) }}</td>
+                </tr>
+                {% endif %}
                 {% if step_res.copied_from_history %}
                 <tr class="wrong">
                     <td class="has-text-left">Copied</td>

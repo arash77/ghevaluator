@@ -511,3 +511,32 @@ def test_galaxy_under_a_path():
     assert split("https://example.org/galaxy/u/someone/h/my-history") == ("https://example.org/galaxy", "/u/someone/h/my-history")
     assert split("https://example.org/galaxy/published/workflow?id=1") == ("https://example.org/galaxy", "/published/workflow")
     assert split("https://example.org/galaxy/") == ("https://example.org/galaxy", "")
+
+
+def test_partly_failed_collection_step():
+    """A step mapped over 20 elements: done if some elements worked, failed only if all failed"""
+    with (DATA / f"{TB_ID}.json").open() as f:
+        history = json.load(f)
+    step = next(j for j in history["summary"]["jobs"] if j.get("tool_name") == "Finds SNP sites" and j.get("implicit_collection_jobs_id"))
+    output = step["outputs"][0]["id"]
+    wf = ghevaluator.build_workflow(history)
+    k = next(k for k, s in wf["steps"].items() if s.get("job_id") == step["id"])
+    # saved without element states: the state of the one job given by Galaxy (error)
+    assert wf["steps"][k]["failed"]
+    # the output was deleted in this history, keep it for the comparison
+    step["outputs"][0]["deleted"] = False
+    next(c for c in history["contents"] if c["id"] == output)["deleted"] = False
+    history["collection_states"] = {output: {"ok": 20}}
+    ref = ghevaluator.build_workflow(history)
+    history["collection_states"] = {output: {"ok": 17, "error": 3}}
+    wf = ghevaluator.build_workflow(history)
+    assert not wf["steps"][k]["failed"]
+    assert (wf["steps"][k]["failed_elements"], wf["steps"][k]["elements"]) == (3, 20)
+    report = compare(wf, ref)
+    assert "Some collection elements failed: Finds SNP sites (3 of 20)." in report["in_short"]
+    report["inputs"] = {"history": "h", "workflow": "w"}
+    assert "3 of 20 collection elements failed." in ghevaluator.generate_markdown_report_content(report)
+    assert "Failed collection elements" in ghevaluator.generate_html_report_content(report)
+    history["collection_states"] = {output: {"error": 20}}
+    wf = ghevaluator.build_workflow(history)
+    assert wf["steps"][k]["failed"]

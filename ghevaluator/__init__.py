@@ -379,6 +379,9 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
         s_report['cached'] = bool(raw_hist and raw_hist.get('cached'))
         s_report['cached_reference'] = bool(raw_ref.get('cached'))
         s_report['deleted'] = bool(raw_hist and raw_hist.get('deleted'))
+        # collection elements whose job failed, for a step mapped over a collection
+        s_report['failed_elements'] = raw_hist.get('failed_elements', 0) if raw_hist else 0
+        s_report['elements'] = raw_hist.get('elements', 0) if raw_hist else 0
         copied_from = raw_hist.get('history_id') if raw_hist else None
         if raw_hist and raw_hist.get('inaccessible'):
             s_report['copied_from_history'] = 'not accessible'
@@ -498,6 +501,9 @@ def summarize_report(report):
     copied = [s['tool'] for s in report['copied_steps']]
     if copied:
         sentences.append(f"Results copied from another history: {count_names(copied)}.")
+    partly_failed = [f"{s['tool']['workflow']} ({s['failed_elements']} of {s['elements']})" for s in matched if s.get('failed_elements')]
+    if partly_failed:
+        sentences.append(f"Some collection elements failed: {', '.join(partly_failed)}.")
     cached = report['score']['cached_steps']
     if cached:
         sentences.append(f"{cached} step{'s' if cached > 1 else ''} reused the result of an earlier job (job cache).")

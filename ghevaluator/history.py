@@ -36,6 +36,9 @@ CONTENT_KEYS = "id,uuid,hid,name,extension,file_size,history_content_type,visibl
 # job states that are not a failure (deleted jobs have deleted outputs and count as deleted steps)
 DONE_STATES = ("ok", "skipped", "deleted", "deleting")
 
+# dataset states of a finished dataset (discarded: purged after it was made)
+DATASET_DONE_STATES = ("ok", "deferred", "discarded")
+
 
 def split_galaxy_url(url):
     """
@@ -122,16 +125,18 @@ def api_get(galaxy_url, path, apikey=None, params=None):
     return r.json()
 
 
-def get_collection_dataset_ids(galaxy_url, hdca_id, apikey=None):
+def get_collection_datasets(galaxy_url, hdca_id, apikey=None):
     """
-    Get the ids and uuids of all datasets inside a dataset collection, nested collections included
+    Get the ids and uuids of all datasets inside a dataset collection, nested collections included,
+    and the number of datasets in each state
 
     :param galaxy_url: URL of the Galaxy server
     :param hdca_id: id of the history dataset collection
     :param apikey: optional API key
-    :return: sorted list of dataset ids and uuids
+    :return: sorted list of dataset ids and uuids, dictionary state -> number of datasets
     """
     ids = set()
+    states = Counter()
 
     def walk(elements):
         for element in elements:
@@ -140,9 +145,10 @@ def get_collection_dataset_ids(galaxy_url, hdca_id, apikey=None):
                 walk(obj.get("elements", []))
             else:
                 ids.update(v for v in (obj.get("id"), obj.get("uuid")) if v)
+                states[obj.get("state")] += 1
 
     walk(api_get(galaxy_url, f"dataset_collections/{hdca_id}", apikey).get("elements", []))
-    return sorted(ids)
+    return sorted(ids), dict(states)
 
 
 def load_history(hist_url, apikey=None):
@@ -151,7 +157,8 @@ def load_history(hist_url, apikey=None):
 
     :param hist_url: URL to Galaxy history
     :param apikey: API key to Galaxy server with history, optional for published or shared histories
-    :return: dictionary with history information, extraction summary, contents, collections and jobs
+    :return: dictionary with history information, extraction summary, contents, collections (dataset ids
+        and states) and jobs
     """
     galaxy_url, hist_name, hist_id = get_hist_info(hist_url, apikey)
     summary = api_get(galaxy_url, f"histories/{hist_id}/extraction_summary", apikey)
@@ -162,13 +169,14 @@ def load_history(hist_url, apikey=None):
         params={"v": "dev", "keys": CONTENT_KEYS, "limit": 10000},
     )
     collections = {}
+    collection_states = {}
     jobs = {}
     for job in summary["jobs"]:
         # jobs and collections that can not be read (e.g. copied from a private history) are skipped
         for output in job["outputs"]:
             if output["history_content_type"] == "dataset_collection" and output["id"] not in collections:
                 try:
-                    collections[output["id"]] = get_collection_dataset_ids(galaxy_url, output["id"], apikey)
+                    collections[output["id"]], collection_states[output["id"]] = get_collection_datasets(galaxy_url, output["id"], apikey)
                 except requests.HTTPError:
                     collections[output["id"]] = []
         if job["step_type"] == "tool" and job.get("id") and job["id"] not in jobs:
@@ -185,6 +193,7 @@ def load_history(hist_url, apikey=None):
         "summary": summary,
         "contents": contents,
         "collections": collections,
+        "collection_states": collection_states,
         "jobs": jobs,
     }
 
@@ -221,8 +230,10 @@ def build_workflow(history):
     Turn a loaded history into a workflow, with steps in the format of a Galaxy workflow file
 
     Besides the usual keys, tool steps have `job_id`, `history_id` (history where the job ran),
-    `cached` (job result reused from the job cache), `failed` (job failed or not finished), `end_time`,
-    `inaccessible` (job details can not be read) and all steps have `outputs` and `deleted` (all outputs deleted).
+    `cached` (job result reused from the job cache), `failed` (job failed or not finished, for a step mapped
+    over a collection: all its jobs), `failed_elements` and `elements` (datasets of the output collections
+    of a mapped over step, failed and all), `end_time`, `inaccessible` (job details can not be read) and all
+    steps have `outputs` and `deleted` (all outputs deleted).
 
     :param history: dictionary from `load_history`
     :return: dictionary with the workflow corresponding to the Galaxy history
@@ -276,9 +287,19 @@ def build_workflow(history):
                 "inaccessible": True,
                 "cached": False,
                 "failed": False,
+                "failed_elements": 0,
+                "elements": 0,
                 "end_time": None,
             }
             continue
+        # a mapped over step has one job per collection element, the summary gives one of them:
+        # the states of the output datasets tell how many failed
+        states = Counter()
+        if job.get("implicit_collection_jobs_id"):
+            for output in job["outputs"]:
+                states.update(history.get("collection_states", {}).get(output["id"], {}))
+        elements = sum(states.values())
+        failed_elements = sum(n for state, n in states.items() if state not in DATASET_DONE_STATES)
         parameters = dict(job_details["params"])
         input_connections = {}
         for name, inp in job_details["inputs"].items():
@@ -297,8 +318,9 @@ def build_workflow(history):
             "job_id": job["id"],
             "history_id": job_details["history_id"],
             "cached": bool(job_details.get("copied_from_job_id")),
-            # shortcut: for mapped over steps this is the state of one job, use all jobs if partial failures matter
-            "failed": job_details.get("state") not in DONE_STATES,
+            "failed": failed_elements == elements if elements else job_details.get("state") not in DONE_STATES,
+            "failed_elements": failed_elements,
+            "elements": elements,
             "end_time": job_details.get("update_time"),
         }
     return {
