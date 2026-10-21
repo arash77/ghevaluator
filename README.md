@@ -29,17 +29,19 @@ options:
   -u HISTORY_URL, --history_url HISTORY_URL
                         URL to Galaxy history
   -w WORKFLOW_URL, --workflow_url WORKFLOW_URL
-                        URL to reference workflow file (.ga)
+                        URL to reference workflow: a workflow file (.ga) or a Galaxy workflow link
+                        with the workflow id
   -r REFERENCE_HISTORY_URL, --reference_history_url REFERENCE_HISTORY_URL
                         URL to reference Galaxy history
   -c CSV, --csv CSV     CSV file with several histories to evaluate, with columns 'student name',
                         'stud hist id', 'ref hist id' and optional 'tutorial name' (ids or URLs)
   -g GALAXY_URL, --galaxy_url GALAXY_URL
-                        Galaxy URL for history ids in the CSV file (default: https://usegalaxy.eu)
+                        Galaxy server of the API key, also used for history ids in the CSV file.
+                        The API key is only sent to this server (default: https://usegalaxy.eu)
   -a APIKEY, --apikey APIKEY
-                        Galaxy API key for the same instance where the history is, not needed for
-                        published histories or histories shared via link, needed for histories
-                        shared with a specific account
+                        Galaxy API key of an account on the --galaxy_url server, needed for
+                        histories shared with a specific account, not for published histories or
+                        histories shared via link
   -o OUTPUT, --output OUTPUT
                         Path to output folder (default: current folder)
 ```
@@ -75,12 +77,12 @@ $ ghevaluator -c histories.csv -a $GALAXY_API_KEY -o reports
 
 The reports of each history are written in a folder named after the student, with an `overview.md` and `overview.json` of all histories.
 
-History URLs can be links with the history id (`/histories/view?id=...`, `/published/history?id=...`) or `/u/<username>/h/<slug>` links of published histories. Histories have to be accessible to the API key owner, e.g. shared with them, or published. Nothing is created or changed in Galaxy.
+History URLs can be links with the history id (`/histories/view?id=...`, `/published/history?id=...`) or `/u/<username>/h/<slug>` links of published histories. Histories have to be accessible to the API key owner, e.g. shared with them, or published. The API key is only sent to the Galaxy server given with `-g` (https://usegalaxy.eu by default), so a link to another server in the CSV file can not get the key. Nothing is created or changed in Galaxy.
 
 ### What is compared
 
-- **Steps**: steps of the history are matched to the steps of the reference by tool and by the steps their inputs come from, not by their order. Steps run again, run in another order or not in the reference are handled. For each reference step, the report gives the matched history step, the tool version, the parameters and whether its inputs come from the right steps.
-- **Missing and extra steps**: reference steps not found in the history, and history steps not in the reference. Steps whose outputs were all deleted are reported but not counted as extra steps.
+- **Steps**: steps of the history are matched to the steps of the reference by tool and by the steps their inputs come from, not by their order. Steps run again, run in another order or not in the reference are handled. For each reference step, the report gives the matched history step, the tool version, the parameters and whether each input comes from the right step (swapped inputs are different). Datasets and collection element names are not compared as parameters.
+- **Missing and extra steps**: reference steps not found in the history, and history steps not in the reference. Steps whose outputs were all deleted are reported but not counted as extra steps. Failed or unfinished steps do not count as done. Steps the tutor threw away in a reference history (failed, or all outputs deleted and not used later) are not asked from the students.
 - **Copied results**: steps whose job ran in another history, i.e. results copied from someone else's history, and steps whose job can not be read, usually because it ran in someone else's private history. When all steps ran in another history, the report says so: this is expected for a history imported by a tutor, not for a history shared by a student.
 - **Job cache**: steps whose result was reused from an earlier job.
 - **Outputs** (reference history only): output formats of matched steps, and the last step of the reference compared to the last 5 steps of the history (by job end time), including the similarity of the output content for text datasets.

@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib import parse
 
 from ghevaluator.history import (  # noqa: F401
+    api_get,
     build_workflow,
     fetch_dataset_text,
     get_hist_info,
@@ -27,14 +28,44 @@ from ghevaluator.match import (  # noqa: F401
 )
 
 
-def get_standard_workflow(wf_url):
+DEFAULT_GALAXY_URL = "https://usegalaxy.eu"
+
+
+def check_key_host(url, apikey, galaxy_url):
+    """
+    Make sure the API key is only sent to its Galaxy server, not to a server named in a link
+    (e.g. a link given by a student)
+
+    :param url: URL the key would be sent to
+    :param apikey: optional API key
+    :param galaxy_url: Galaxy server of the API key, None to allow any server
+    :raise ValueError: if an API key is given and the URL is on another server
+    """
+    def origin(u):
+        parsed = parse.urlparse(u)
+        return parsed.scheme, parsed.netloc.lower()
+
+    if apikey and galaxy_url and origin(url) != origin(galaxy_url):
+        raise ValueError(f"{url} is not on {galaxy_url}: the API key is only sent to the Galaxy server given with --galaxy_url")
+
+
+def get_standard_workflow(wf_url, apikey=None, galaxy_url=DEFAULT_GALAXY_URL):
     """
     Turn the workflow in a provided link into a dictionary, as the standard to be compared with the user workflow.
 
-    :param wf_url: link to the standard workflow file
+    :param wf_url: link to a workflow file, or to a Galaxy workflow with the workflow id (e.g. /published/workflow?id=...)
+    :param apikey: optional API key, for a Galaxy workflow
+    :param galaxy_url: Galaxy server of the API key
     :return: dictionary with the workflow
     """
-    r = requests.get(wf_url)
+    url = parse.urlparse(wf_url)
+    wf_id = parse.parse_qs(url.query).get("id", [None])[0]
+    if wf_id:
+        check_key_host(wf_url, apikey, galaxy_url)
+        server = url._replace(path="", params="", query="", fragment="").geturl()
+        return api_get(server, f"workflows/{wf_id}/download", apikey, params={"format": "json-download"})
+    r = requests.get(wf_url, timeout=60)
+    r.raise_for_status()
     return r.json()
 
 
@@ -527,48 +558,57 @@ def is_workflow_url(url):
     :return: boolean
     """
     path = parse.urlparse(url).path
-    return path.endswith(".ga") or "/workflows/" in path
+    return path.endswith((".ga", "/workflow")) or "/workflows/" in path
 
 
-def get_reference(ref_url, apikey=None):
+def get_reference(ref_url, apikey=None, ref_type=None, galaxy_url=DEFAULT_GALAXY_URL):
     """
-    Get the reference workflow from a workflow file URL or a history URL
+    Get the reference workflow from a workflow URL or a history URL
 
-    :param ref_url: URL to a workflow file (.ga) or to a Galaxy history
+    :param ref_url: URL to a workflow file (.ga), a Galaxy workflow or a Galaxy history
     :param apikey: optional API key for a history
+    :param ref_type: 'workflow' or 'history', guessed from the URL if not given
+    :param galaxy_url: Galaxy server of the API key
     :return: workflow dictionary and reference type ('workflow' or 'history')
     """
-    if is_workflow_url(ref_url):
-        return get_standard_workflow(ref_url), 'workflow'
+    ref_type = ref_type or ('workflow' if is_workflow_url(ref_url) else 'history')
+    if ref_type == 'workflow':
+        return get_standard_workflow(ref_url, apikey, galaxy_url), 'workflow'
+    check_key_host(ref_url, apikey, galaxy_url)
     return get_workflow_from_history(ref_url, apikey), 'history'
 
 
-def evaluate(hist_url, ref_url, apikey=None, ref_wf=None):
+def evaluate(hist_url, ref_url, apikey=None, ref_wf=None, ref_type=None, galaxy_url=DEFAULT_GALAXY_URL):
     """
     Compare a history to a reference and return the report
 
     :param hist_url: URL to Galaxy history
-    :param ref_url: URL to reference workflow file or reference history
+    :param ref_url: URL to reference workflow or reference history
     :param apikey: optional Galaxy API key
     :param ref_wf: optional reference already loaded with `get_reference`, as (workflow, type)
+    :param ref_type: 'workflow' or 'history', guessed from the URL if not given
+    :param galaxy_url: Galaxy server of the API key, the key is not sent to other servers
     :return: dictionary with report
     """
-    ref, ref_type = ref_wf if ref_wf is not None else get_reference(ref_url, apikey)
+    check_key_host(hist_url, apikey, galaxy_url)
+    ref, ref_type = ref_wf if ref_wf is not None else get_reference(ref_url, apikey, ref_type, galaxy_url)
     hist_wf = get_workflow_from_history(hist_url, apikey)
     report = {'inputs': {'history': hist_url, 'workflow': ref_url, 'reference': ref_url, 'reference_type': ref_type}}
     return compare_workflows(hist_wf, ref, report, fetch_text=lambda url, ds: fetch_dataset_text(url, ds, apikey))
 
 
-def ghevaluator(hist_url, wf_url, apikey, output_dp):
+def ghevaluator(hist_url, wf_url, apikey, output_dp, ref_type=None, galaxy_url=DEFAULT_GALAXY_URL):
     """
     The main function: compare a history to a reference and write the report files
 
     :param hist_url: URL to Galaxy history
-    :param wf_url: URL to reference workflow file or reference history
+    :param wf_url: URL to reference workflow or reference history
     :param apikey: a Galaxy API key, optional for published or shared histories
     :param output_dp: Path object of the output report
+    :param ref_type: 'workflow' or 'history', guessed from the URL if not given
+    :param galaxy_url: Galaxy server of the API key, the key is not sent to other servers
     """
-    generate_report_files(evaluate(hist_url, wf_url, apikey), output_dp)
+    generate_report_files(evaluate(hist_url, wf_url, apikey, ref_type=ref_type, galaxy_url=galaxy_url), output_dp)
 
 
 def read_students_csv(csv_fp, galaxy_url):
@@ -610,13 +650,14 @@ def safe_name(name):
     return re.sub(r'[^\w-]+', '_', name, flags=re.UNICODE).strip('_') or 'history'
 
 
-def evaluate_histories(rows, output_dp, apikey=None):
+def evaluate_histories(rows, output_dp, apikey=None, galaxy_url=DEFAULT_GALAXY_URL):
     """
     Evaluate several histories and write one report per history and an overview
 
     :param rows: list of dictionaries with `student`, `history` (URL), `reference` (URL) and optional `tutorial`
     :param output_dp: Path object of the output directory
     :param apikey: optional Galaxy API key
+    :param galaxy_url: Galaxy server of the API key, histories on other servers are not evaluated with the key
     :return: list of overview rows
     """
     references = {}
@@ -632,8 +673,8 @@ def evaluate_histories(rows, output_dp, apikey=None):
         entry = dict(row, report=f"{folder}/report.md", score=None, in_short=[], error=None)
         try:
             if row['reference'] not in references:
-                references[row['reference']] = get_reference(row['reference'], apikey)
-            report = evaluate(row['history'], row['reference'], apikey, references[row['reference']])
+                references[row['reference']] = get_reference(row['reference'], apikey, galaxy_url=galaxy_url)
+            report = evaluate(row['history'], row['reference'], apikey, references[row['reference']], galaxy_url=galaxy_url)
             generate_report_files(report, output_dp / folder)
             entry['score'] = report['score']
             entry['in_short'] = report['in_short']
@@ -657,14 +698,14 @@ def generate_overview_content(overview):
     return get_template_env().get_template("overview.md").render(rows=overview)
 
 
-def ghevaluator_batch(csv_fp, output_dp, apikey=None, galaxy_url="https://usegalaxy.eu"):
+def ghevaluator_batch(csv_fp, output_dp, apikey=None, galaxy_url=DEFAULT_GALAXY_URL):
     """
     Evaluate several histories listed in a CSV file and write one report per history and an overview
 
     :param csv_fp: path to the CSV file, see `read_students_csv`
     :param output_dp: Path object of the output directory
     :param apikey: optional Galaxy API key
-    :param galaxy_url: Galaxy URL used for history ids in the CSV file
+    :param galaxy_url: Galaxy URL used for history ids in the CSV file, the API key is only sent to it
     :return: list of overview rows
     """
-    return evaluate_histories(read_students_csv(csv_fp, galaxy_url), output_dp, apikey)
+    return evaluate_histories(read_students_csv(csv_fp, galaxy_url), output_dp, apikey, galaxy_url)

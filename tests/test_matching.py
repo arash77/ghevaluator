@@ -445,3 +445,26 @@ def test_job_cache_row_only_for_done_steps():
     report = compare(hist, ref)
     report["inputs"] = {"history": "h", "workflow": "w"}
     assert "Result reused from an earlier job" not in ghevaluator.generate_html_report_content(report)
+
+
+def test_api_key_only_sent_to_its_server():
+    """A link given by a student must not get the tutor's API key"""
+    ghevaluator.check_key_host("https://usegalaxy.eu/histories/view?id=1", "key", "https://usegalaxy.eu")
+    ghevaluator.check_key_host("https://attacker.example/histories/view?id=1", None, "https://usegalaxy.eu")
+    for url in ("https://attacker.example/histories/view?id=1", "http://usegalaxy.eu/histories/view?id=1"):
+        try:
+            ghevaluator.evaluate(url, "https://usegalaxy.eu/histories/view?id=2", "key", ref_wf=({}, "history"))
+        except ValueError as e:
+            assert "only sent to the Galaxy server" in str(e)
+        else:
+            raise AssertionError(url)
+
+
+def test_reference_type_is_not_guessed_when_given(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ghevaluator, "api_get", lambda url, path, key=None, params=None: calls.append((url, path)) or {"steps": {}})
+    monkeypatch.setattr(ghevaluator, "get_workflow_from_history", lambda url, key=None: calls.append(("history", url)) or {"steps": {}})
+    assert ghevaluator.get_reference("https://usegalaxy.eu/published/workflow?id=abc", ref_type="workflow")[1] == "workflow"
+    assert calls[-1] == ("https://usegalaxy.eu", "workflows/abc/download")
+    assert ghevaluator.get_reference("https://usegalaxy.eu/published/workflow?id=abc")[1] == "workflow"
+    assert ghevaluator.get_reference("https://usegalaxy.eu/u/a/workflows/b", ref_type="history")[1] == "history"

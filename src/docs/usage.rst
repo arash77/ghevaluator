@@ -17,17 +17,19 @@ Galaxy History Evaluator can be used via command-line
       -u HISTORY_URL, --history_url HISTORY_URL
                             URL to Galaxy history
       -w WORKFLOW_URL, --workflow_url WORKFLOW_URL
-                            URL to reference workflow file (.ga)
+                            URL to reference workflow: a workflow file (.ga) or a Galaxy workflow link
+                            with the workflow id
       -r REFERENCE_HISTORY_URL, --reference_history_url REFERENCE_HISTORY_URL
                             URL to reference Galaxy history
       -c CSV, --csv CSV     CSV file with several histories to evaluate, with columns 'student name',
                             'stud hist id', 'ref hist id' and optional 'tutorial name' (ids or URLs)
       -g GALAXY_URL, --galaxy_url GALAXY_URL
-                            Galaxy URL for history ids in the CSV file (default: https://usegalaxy.eu)
+                            Galaxy server of the API key, also used for history ids in the CSV file.
+                            The API key is only sent to this server (default: https://usegalaxy.eu)
       -a APIKEY, --apikey APIKEY
-                            Galaxy API key for the same instance where the history is, not needed for
-                            published histories or histories shared via link, needed for histories
-                            shared with a specific account
+                            Galaxy API key of an account on the --galaxy_url server, needed for
+                            histories shared with a specific account, not for published histories or
+                            histories shared via link
       -o OUTPUT, --output OUTPUT
                             Path to output folder (default: current folder)
 
@@ -41,13 +43,13 @@ The tool needs:
 
 2. A reference, either
 
-    - URL to a reference workflow file (``-w``). Links to the workflows of a tutorial are on the tutorial pages of the Galaxy Training website: https://training.galaxyproject.org/
+    - URL to a reference workflow (``-w``): a workflow file, or a Galaxy workflow link with the workflow id (e.g. ``/published/workflow?id=...``). Links to the workflows of a tutorial are on the tutorial pages of the Galaxy Training website: https://training.galaxyproject.org/
 
         For example: https://training.galaxyproject.org/training-material/topics/introduction/tutorials/galaxy-intro-short/workflows/Galaxy-Workflow-galaxy-intro-short.ga
 
     - or URL to a reference history (``-r``). Output formats and the content of the final output are then compared too.
 
-3. Optionally, a Galaxy API key for the Galaxy server where the history is, if the history is not published or shared via link
+3. Optionally, a Galaxy API key, if the history is not published or shared via link. The key is only sent to the Galaxy server given with ``-g`` (https://usegalaxy.eu by default): for histories on another server, give that server with ``-g``
 
     To get your own Galaxy API key, please follow the instructions `here <https://training.galaxyproject.org/training-material/faqs/galaxy/preferences_admin_api_key.html>`_
 
