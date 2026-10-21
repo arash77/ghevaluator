@@ -43,7 +43,7 @@ In the tables: ✅ same as the reference, ❌ different from the reference or mi
 {%- if s.status == "missing" %}
 | {{ s.order.workflow }} | {{ cell(s.tool.workflow) }} | missing | {{ cell(s.version.workflow) }} | | | |
 {%- else %}
-| {{ s.order.workflow }} | {{ cell(s.tool.workflow) }} | {{ s.order.history }} | {{ cell(s.version.workflow) }} / {{ cell(s.version.history) }} {% if not s.version.same %}⚠️{% endif %} | {{ yes(s.inputs_connection.same) }} | {{ s.parameters.wrong }} / {{ s.parameters.number.workflow }} | {% if s.output_formats and not s.output_formats.same %}output formats {{ s.output_formats.history | join(", ") }} instead of {{ s.output_formats.workflow | join(", ") }}. {% endif %}{% if s.cached %}job cache. {% endif %}{% if s.deleted %}outputs deleted. {% endif %}{% if s.copied_from_history %}copied from history {{ s.copied_from_history }}.{% endif %} |
+| {{ s.order.workflow }} | {{ cell(s.tool.workflow) }} | {{ s.order.history }} | {{ cell(s.version.workflow) }} / {{ cell(s.version.history) }} {% if not s.version.same %}⚠️{% endif %} | {{ yes(s.inputs_connection.same) }} | {{ s.parameters.wrong }} / {{ s.parameters.number.workflow }} | {% if s.output_formats and not s.output_formats.same %}output formats {{ s.output_formats.history | join(", ") }} instead of {{ s.output_formats.workflow | join(", ") }}. {% endif %}{% if s.cached %}job cache{% if s.cached_reference %} (also in the reference){% endif %}. {% endif %}{% if s.deleted %}outputs deleted. {% endif %}{% if s.copied_from_history %}copied from history {{ s.copied_from_history }}.{% endif %} |
 {%- endif %}
 {%- endfor %}
 {% for step_num, s in report.comparison_given_reference_workflow_order.items() %}

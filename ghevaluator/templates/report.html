@@ -56,7 +56,7 @@
                     <td class="has-text-left">{{ status(step_res.output_formats.same) }}</td>
                 </tr>
                 {% endif %}
-                {% if step_res.cached or step_res.cached_reference %}
+                {% if step_res.status == "matched" and (step_res.cached or step_res.cached_reference) %}
                 {% set same_cache = step_res.cached == step_res.cached_reference %}
                 <tr {% if same_cache %} class="correct" {% else %} class="missed" {% endif %}>
                     <td class="has-text-left">Result reused from an earlier job (job cache)</td>

@@ -431,3 +431,17 @@ def test_workflow_file_reference_has_no_output_formats():
     assert not any("output_formats" in c for c in report["comparison_given_reference_workflow_order"].values())
     assert "final_outputs" not in report
     assert not any(s.startswith("Other output formats") for s in report["in_short"])
+
+
+def test_job_cache_row_only_for_done_steps():
+    ref = load(REF_ID)
+    k = step_by_tool(ref, "Grouping1")
+    ref["steps"][k]["cached"] = True
+    hist = copy.deepcopy(ref)
+    report = compare(hist, ref)
+    report["inputs"] = {"history": "h", "workflow": "w"}
+    assert "job cache (also in the reference)." in ghevaluator.generate_markdown_report_content(report)
+    del hist["steps"][k]
+    report = compare(hist, ref)
+    report["inputs"] = {"history": "h", "workflow": "w"}
+    assert "Result reused from an earlier job" not in ghevaluator.generate_html_report_content(report)
