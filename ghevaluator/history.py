@@ -33,8 +33,9 @@ JOB_FIELDS = [
 # fields of the history contents kept in a loaded history
 CONTENT_KEYS = "id,uuid,hid,name,extension,file_size,history_content_type,visible,deleted"
 
-# job states that are not a failure (deleted jobs have deleted outputs and count as deleted steps)
-DONE_STATES = ("ok", "skipped", "deleted", "deleting")
+# job states of a finished job (a deleted job was cancelled before it finished, the outputs of a
+# finished job can still be deleted later: the step is then done, with deleted outputs)
+DONE_STATES = ("ok", "skipped")
 
 # one connection for the many API calls of a history
 SESSION = requests.Session()
@@ -321,7 +322,7 @@ def build_workflow(history):
             "job_id": job["id"],
             "history_id": job_details["history_id"],
             "cached": bool(job_details.get("copied_from_job_id")),
-            "failed": failed_elements == elements if elements else job_details.get("state") not in DONE_STATES,
+            "failed": failed_elements == elements if elements else not job_finished(job_details),
             "failed_elements": failed_elements,
             "elements": elements,
             "end_time": job_details.get("update_time"),
@@ -334,6 +335,18 @@ def build_workflow(history):
         "galaxy_url": history["galaxy_url"],
         "steps": steps,
     }
+
+
+def job_finished(job_details):
+    """
+    Check if a job finished (interactive tools end as deleted when they are stopped)
+
+    :param job_details: job details
+    :return: boolean
+    """
+    if str(job_details.get("tool_id")).startswith("interactive_tool_"):
+        return job_details.get("state") in DONE_STATES + ("deleted", "deleting")
+    return job_details.get("state") in DONE_STATES
 
 
 def get_main_history_id(hist_id, steps):

@@ -377,7 +377,7 @@ def test_read_students_csv(tmp_path):
 
 def test_in_short():
     report = compare(load(STUDENT_ID), load(REF_ID))
-    assert report["in_short"] == ["7 of 8 steps done. Missing: Sort.", "Extra steps: Select last."]
+    assert report["in_short"] == ["7 of 8 steps done. Missing: Sort.", "Extra steps: Select last.", "Failed or not finished, so not counted as done: Group (2 times)."]
     ref = load(REF_ID)
     hist = copy.deepcopy(ref)
     set_parameter(hist["steps"][step_by_tool(hist, "Grouping1")], "ignorecase", "true")
@@ -391,7 +391,7 @@ def test_overview():
         {"student": "Student B", "tutorial": "peaks", "report": "Student_B_peaks/report.md", "score": None, "in_short": [], "error": "400 Client Error"},
     ]
     content = ghevaluator.generate_overview_content(rows)
-    assert "| Student A | peaks | 87.5 % |  | 7 of 8 steps done. Missing: Sort. Extra steps: Select last. | [report](Student_A_peaks/report.md) |" in content
+    assert "| Student A | peaks | 87.5 % |  | 7 of 8 steps done. Missing: Sort. Extra steps: Select last. Failed or not finished, so not counted as done: Group (2 times). | [report](Student_A_peaks/report.md) |" in content
     assert "Could not be evaluated: 400 Client Error" in content
 
 
@@ -540,3 +540,29 @@ def test_partly_failed_collection_step():
     history["collection_states"] = {output: {"error": 20}}
     wf = ghevaluator.build_workflow(history)
     assert wf["steps"][k]["failed"]
+
+
+def test_deleted_runs_finished_or_cancelled():
+    """A finished run whose outputs were deleted is done (and flagged), a cancelled job is not"""
+    with (DATA / f"{STUDENT_ID}.json").open() as f:
+        history = json.load(f)
+    states = {}
+    for job in history["summary"]["jobs"]:
+        if job["step_type"] == "tool" and any(o["deleted"] for o in job["outputs"]):
+            states[job["tool_name"]] = states.get(job["tool_name"], []) + [history["jobs"][job["id"]]["state"]]
+    assert states == {"Replace Text": ["ok"], "Group": ["deleted", "deleted"]}
+    wf = ghevaluator.build_workflow(history)
+    by_name = {}
+    for s in wf["steps"].values():
+        if s["type"] == "tool" and s["deleted"]:
+            by_name.setdefault(s["name"], []).append(s["failed"])
+    assert by_name == {"Replace Text": [False], "Group": [True, True]}
+    # an interactive tool ends as deleted when it is stopped
+    assert ghevaluator.history.job_finished({"tool_id": "interactive_tool_rstudio", "state": "deleted"})
+    # the only run of a step is a finished run with deleted outputs: done, flagged
+    ref = load(REF_ID)
+    hist = copy.deepcopy(ref)
+    k = step_by_tool(hist, "Grouping1")
+    hist["steps"][k]["deleted"] = True
+    group = next(c for c in compare(hist, ref)["comparison_given_reference_workflow_order"].values() if c["id"]["workflow"] == "Grouping1")
+    assert group["status"] == "matched" and group["deleted"]
