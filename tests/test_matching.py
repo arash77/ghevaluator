@@ -488,3 +488,17 @@ def test_reference_type_is_not_guessed_when_given(monkeypatch):
     assert calls[-1] == ("https://usegalaxy.eu", "workflows/abc/download")
     assert ghevaluator.get_reference("https://usegalaxy.eu/published/workflow?id=abc")[1] == "workflow"
     assert ghevaluator.get_reference("https://usegalaxy.eu/u/a/workflows/b", ref_type="history")[1] == "history"
+
+
+def test_occurrences_count_kept_runs_by_tool():
+    """A run deleted by the student and a renamed tool are counted like in the matching"""
+    ref = load(REF_ID)
+    hist = copy.deepcopy(ref)
+    k = step_by_tool(hist, "Grouping1")
+    deleted = copy.deepcopy(hist["steps"][k])
+    deleted["id"] = len(hist["steps"])
+    deleted["deleted"] = True
+    hist["steps"][str(deleted["id"])] = deleted
+    hist["steps"][k]["name"] = "Group data"
+    number = compare(hist, ref)["comparison_by_reference_workflow_tools"]["Group"]["number"]
+    assert number == {"workflow": 1, "history": 1, "same": True}

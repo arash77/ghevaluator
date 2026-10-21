@@ -24,6 +24,7 @@ from ghevaluator.match import (  # noqa: F401
     match_steps,
     same_connections,
     text_similarity,
+    thrown_away,
     tool_key,
 )
 
@@ -335,7 +336,7 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
     mapping = matching['mapping']
     # steps the tutor threw away (failed or deleted attempts) are not asked from the students
     scored_ref_steps = {k: s for k, s in ref_steps.items() if int(k) not in matching['thrown_away']}
-    ordered_hist_wf, hist_wf_by_tool = reformate_workflows(hist_steps)
+    ordered_hist_wf, _ = reformate_workflows(hist_steps)
     ordered_ref_wf, ref_wf_by_tool = reformate_workflows(scored_ref_steps)
     report['reference_wf'] = ordered_ref_wf
     report['history_wf'] = ordered_hist_wf
@@ -388,17 +389,21 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
             }
         comparison[i] = s_report
     report['comparison_given_reference_workflow_order'] = comparison
-    # Compare workflows by tools
+    # Compare workflows by tools, counting the runs of the history like the matching does:
+    # by tool (not by name, which can change between versions), without thrown away runs
+    hist_away = thrown_away(hist_steps)
     by_tool = {}
     for tool, ref_tool_steps in ref_wf_by_tool.items():
         details = {}
         for j, ref_step in enumerate(ref_tool_steps):
             details[j] = next(c for i, c in comparison.items() if ordered_ref_wf[i] is ref_step)
+        key = tool_key(ref_steps[ref_tool_steps[0]['order']]['tool_id'])
+        hist_runs = sum(1 for k, s in hist_steps.items() if s.get('tool_id') and tool_key(s['tool_id']) == key and int(k) not in hist_away)
         by_tool[tool] = {
             'number': {
                 'workflow': len(ref_tool_steps),
-                'history': len(hist_wf_by_tool.get(tool, [])),
-                'same': len(ref_tool_steps) == len(hist_wf_by_tool.get(tool, []))
+                'history': hist_runs,
+                'same': len(ref_tool_steps) == hist_runs
             },
             'details': details
         }
