@@ -100,7 +100,8 @@ def api_get(galaxy_url, path, apikey=None, params=None):
     :return: decoded JSON response
     """
     headers = {"x-api-key": apikey} if apikey else {}
-    r = requests.get(f"{galaxy_url}/api/{path}", params=params, headers=headers, timeout=60)
+    # large histories can take minutes, the limit only stops a stalled server
+    r = requests.get(f"{galaxy_url}/api/{path}", params=params, headers=headers, timeout=(30, 600))
     r.raise_for_status()
     return r.json()
 
