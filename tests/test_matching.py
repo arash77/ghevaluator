@@ -259,8 +259,23 @@ def test_imported_copy_is_not_flagged_as_copied():
     # but it is said, a student could also share a copy of someone else's whole history
     assert report["score"]["all_steps_from_history"] == REF_ID
     report["inputs"] = {"history": "h", "workflow": "w"}
-    assert f"All steps of this history ran in history {REF_ID}" in ghevaluator.generate_markdown_report_content(report)
+    assert f"most steps ran in history {REF_ID}" in ghevaluator.generate_markdown_report_content(report)
     assert compare(load(REF_ID), ref)["score"]["all_steps_from_history"] is None
+
+
+def test_copy_of_a_copy_with_results_from_a_third_history():
+    """A copy of the tutor history with 2 results copied from a classmate: both are said"""
+    ref = load(REF_ID)
+    hist = copy.deepcopy(ref)
+    hist["history_id"] = "student"
+    for k in (step_by_tool(hist, "Grouping1"), step_by_tool(hist, "get_flanks1")):
+        hist["steps"][k]["history_id"] = "classmate"
+    hist["main_history_id"] = ghevaluator.history.get_main_history_id("student", hist["steps"])
+    report = compare(hist, ref)
+    assert report["score"]["all_steps_from_history"] == REF_ID
+    assert report["score"]["copied_steps"] == 2
+    assert report["in_short"][0].startswith(f"No step ran in this history, most ran in history {REF_ID}")
+    assert any(s.startswith("Results copied from another history: ") for s in report["in_short"])
 
 
 def test_inaccessible_job():

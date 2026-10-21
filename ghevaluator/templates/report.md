@@ -5,7 +5,7 @@
 - Galaxy history: {{ report.inputs.history }}
 - Reference {{ report.inputs.reference_type or "workflow" }}: {{ report.inputs.workflow }}
 {% if report.all_steps_from_history %}
-> ⚠️ All steps of this history ran in history {{ report.all_steps_from_history }}: the history is a copy of a whole history. This is expected for a history imported by a tutor, not for a history shared by a student.
+> ⚠️ No step of this history ran in it, most steps ran in history {{ report.all_steps_from_history }}: the history is a copy of a whole history. This is expected for a history imported by a tutor, not for a history shared by a student.
 {% endif %}
 {%- if report.in_short %}
 ## In short

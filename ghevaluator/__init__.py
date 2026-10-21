@@ -468,7 +468,7 @@ def summarize_report(report):
     missing = [s['tool']['workflow'] for s in steps if s['status'] == 'missing']
     sentences = []
     if report.get('all_steps_from_history'):
-        sentences.append(f"All steps ran in another history ({report['all_steps_from_history']}): this is a copy of a whole history.")
+        sentences.append(f"No step ran in this history, most ran in history {report['all_steps_from_history']}: this is a copy of a whole history.")
     if missing:
         sentences.append(f"{len(matched)} of {len(steps)} steps done. Missing: {count_names(missing)}.")
     else:
@@ -489,7 +489,7 @@ def summarize_report(report):
     if failed:
         sentences.append(f"Failed or not finished, so not counted as done: {count_names(failed)}.")
     copied = [s['tool'] for s in report['copied_steps']]
-    if copied and not report.get('all_steps_from_history'):
+    if copied:
         sentences.append(f"Results copied from another history: {count_names(copied)}.")
     cached = report['score']['cached_steps']
     if cached:
