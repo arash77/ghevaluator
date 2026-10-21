@@ -327,6 +327,8 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
     # Compare matched steps
     hist_by_order = {s['order']: s for s in ordered_hist_wf}
     main_history = hist_wf.get('main_history_id')
+    # workflow files have outputs too, but with formats only known from the history
+    ref_is_history = bool(ref_wf.get('history_id'))
     comparison = {}
     for i, ref_step in enumerate(ordered_ref_wf):
         raw_ref = ref_steps[ref_step['order']]
@@ -347,7 +349,7 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
             s_report['copied_from_history'] = 'not accessible'
         else:
             s_report['copied_from_history'] = copied_from if copied_from and main_history and copied_from != main_history else None
-        if raw_hist and 'outputs' in raw_ref:
+        if raw_hist and ref_is_history:
             s_report['output_formats'] = {
                 'workflow': output_formats(raw_ref),
                 'history': output_formats(raw_hist),
@@ -391,7 +393,7 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
     report['history_id'] = hist_wf.get('history_id')
     report['main_history_id'] = main_history
     report['all_steps_from_history'] = main_history if main_history and main_history != hist_wf.get('history_id') else None
-    if 'outputs' in next(iter(ref_steps.values()), {}):
+    if ref_is_history:
         report['final_outputs'] = compare_final_outputs(ref_wf, hist_wf, fetch_text)
     scores = [step_score(c) for c in comparison.values()]
     final = report.get('final_outputs') or {}

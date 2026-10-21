@@ -419,3 +419,15 @@ def test_swapped_inputs_are_not_the_same():
 def test_multiple_input_names_are_merged():
     step = {"input_connections": {"inputs": {"id": 1}, "inputs1": {"id": 2}, "input1": {"id": 3}, "input2": [{"id": 4}]}}
     assert ghevaluator.match.connections_by_name(step) == {"inputs": [1, 2], "input1": [3], "input2": [4]}
+
+
+def test_workflow_file_reference_has_no_output_formats():
+    """Outputs of a workflow file (.ga) have no format to compare and no final output"""
+    ref = load(REF_ID)
+    ga = {"steps": copy.deepcopy(ref["steps"])}
+    for step in ga["steps"].values():
+        step["outputs"] = [{"name": "out_file1", "type": "tabular"}]
+    report = compare(load(STUDENT_ID), ga)
+    assert not any("output_formats" in c for c in report["comparison_given_reference_workflow_order"].values())
+    assert "final_outputs" not in report
+    assert not any(s.startswith("Other output formats") for s in report["in_short"])
