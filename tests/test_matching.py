@@ -306,6 +306,7 @@ def test_real_other_run():
     assert len(report["extra_steps"]) == 4
     assert report["score"]["extra_steps"] == 1
     assert report["score"]["deleted_steps"] == 3
+    assert report["steps"] == {"workflow": 8, "history": 8, "same": True}
     matched = [c for c in report["comparison_given_reference_workflow_order"].values() if c["status"] == "matched"]
     assert all(c["inputs_connection"]["same"] for c in matched)
     assert report["final_outputs"]["tool_found"] is False

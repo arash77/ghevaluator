@@ -349,7 +349,9 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
         "same": bool(ref_wf_input_nb == hist_wf_input_nb)
     }
     # Compare number of steps in both workflows
-    hist_step_nb = len(hist_steps) - hist_wf_input_nb
+    # thrown away steps (failed, or deleted and not used) are counted on neither side
+    hist_away = thrown_away(hist_steps)
+    hist_step_nb = len(hist_steps) - hist_wf_input_nb - len(hist_away)
     ref_step_nb = len(scored_ref_steps) - ref_wf_input_nb
     report['steps'] = {
         'workflow': ref_step_nb,
@@ -391,7 +393,6 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
     report['comparison_given_reference_workflow_order'] = comparison
     # Compare workflows by tools, counting the runs of the history like the matching does:
     # by tool (not by name, which can change between versions), without thrown away runs
-    hist_away = thrown_away(hist_steps)
     by_tool = {}
     for tool, ref_tool_steps in ref_wf_by_tool.items():
         details = {}
