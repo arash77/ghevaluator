@@ -36,6 +36,9 @@ CONTENT_KEYS = "id,uuid,hid,name,extension,file_size,history_content_type,visibl
 # job states that are not a failure (deleted jobs have deleted outputs and count as deleted steps)
 DONE_STATES = ("ok", "skipped", "deleted", "deleting")
 
+# one connection for the many API calls of a history
+SESSION = requests.Session()
+
 # dataset states of a finished dataset (discarded: purged after it was made)
 DATASET_DONE_STATES = ("ok", "deferred", "discarded")
 
@@ -72,7 +75,7 @@ def get_hist_info(hist_url, apikey=None):
     hist_id = parse.parse_qs(url.query).get("id", [None])[0]
     if hist_id is None:
         # /u/<username>/h/<slug> links redirect to a URL with the history id
-        r = requests.get(hist_url, allow_redirects=False, timeout=60)
+        r = SESSION.get(hist_url, allow_redirects=False, timeout=60)
         location = parse.urlparse(r.headers.get("Location", ""))
         hist_id = parse.parse_qs(location.query).get("id", [None])[0]
     if hist_id is None:
@@ -120,7 +123,7 @@ def api_get(galaxy_url, path, apikey=None, params=None):
     """
     headers = {"x-api-key": apikey} if apikey else {}
     # large histories can take minutes, the limit only stops a stalled server
-    r = requests.get(f"{galaxy_url}/api/{path}", params=params, headers=headers, timeout=(30, 600))
+    r = SESSION.get(f"{galaxy_url}/api/{path}", params=params, headers=headers, timeout=(30, 600))
     r.raise_for_status()
     return r.json()
 
@@ -376,7 +379,7 @@ def fetch_dataset_text(galaxy_url, dataset_id, apikey=None, max_bytes=200000):
     """
     headers = {"x-api-key": apikey} if apikey else {}
     try:
-        with requests.get(f"{galaxy_url}/api/datasets/{dataset_id}/display", headers=headers, stream=True, timeout=60) as r:
+        with SESSION.get(f"{galaxy_url}/api/datasets/{dataset_id}/display", headers=headers, stream=True, timeout=60) as r:
             r.raise_for_status()
             data = r.raw.read(max_bytes, decode_content=True)
     except requests.RequestException:

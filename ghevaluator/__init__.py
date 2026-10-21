@@ -3,7 +3,6 @@
 import csv
 import json
 import re
-import requests
 
 from jinja2 import Environment, PackageLoader, select_autoescape
 from pathlib import Path
@@ -16,6 +15,7 @@ from ghevaluator.history import (  # noqa: F401
     get_hist_info,
     get_workflow_from_history,
     load_history,
+    SESSION,
     split_galaxy_url,
 )
 from ghevaluator.match import (  # noqa: F401
@@ -66,7 +66,7 @@ def get_standard_workflow(wf_url, apikey=None, galaxy_url=DEFAULT_GALAXY_URL):
         check_key_host(wf_url, apikey, galaxy_url)
         server = split_galaxy_url(wf_url)[0]
         return api_get(server, f"workflows/{wf_id}/download", apikey, params={"format": "json-download"})
-    r = requests.get(wf_url, timeout=60)
+    r = SESSION.get(wf_url, timeout=60)
     r.raise_for_status()
     return r.json()
 
@@ -513,14 +513,24 @@ def summarize_report(report):
     return sentences
 
 
+SCORE_EXPLANATION = (
+    "How the step score works: every step of the reference is worth 100 points. A step done in the history gets 50 points, "
+    "25 more if it was run on the same inputs as in the reference, and up to 25 more for the same settings (each setting "
+    "counts the same, so 1 different setting out of 4 costs 6.25 points). A missing step gets 0 points. The step score is "
+    "the average over all steps of the reference. A different tool version is shown but does not lower the score."
+)
+
+
 def get_template_env():
     """
     Get the Jinja environment with the report templates
     """
-    return Environment(
+    env = Environment(
         loader=PackageLoader("ghevaluator", "templates"),
         autoescape=select_autoescape(enabled_extensions=("html",))
     )
+    env.globals["score_explanation"] = SCORE_EXPLANATION
+    return env
 
 
 def generate_html_report_content(data):

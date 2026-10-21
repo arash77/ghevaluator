@@ -10,4 +10,4 @@
 {%- endif %}
 {%- endfor %}
 
-How the step score works: every step of the reference is worth 100 points. A step done in the history gets 50 points, 25 more if it was run on the same inputs as in the reference, and up to 25 more for the same settings (each setting counts the same, so 1 different setting out of 4 costs 6.25 points). A missing step gets 0 points. The step score is the average over all steps of the reference. A different tool version is shown but does not lower the score.
+{{ score_explanation }}
