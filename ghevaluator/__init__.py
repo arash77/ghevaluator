@@ -628,7 +628,8 @@ def read_students_csv(csv_fp, galaxy_url):
         return value if value.startswith("http") else f"{galaxy_url.rstrip('/')}/histories/view?id={value}"
 
     rows = []
-    with open(csv_fp, newline='') as f:
+    # utf-8-sig: CSV files saved by Excel start with a byte order mark
+    with open(csv_fp, newline='', encoding='utf-8-sig') as f:
         for row in csv.DictReader(f):
             row = {(k or '').strip().lower(): (v or '').strip() for k, v in row.items()}
             student = row.get('student name') or row.get('student')
@@ -660,6 +661,13 @@ def evaluate_histories(rows, output_dp, apikey=None, galaxy_url=DEFAULT_GALAXY_U
     :param galaxy_url: Galaxy server of the API key, histories on other servers are not evaluated with the key
     :return: list of overview rows
     """
+    def write_overview():
+        output_dp.mkdir(parents=True, exist_ok=True)
+        with (output_dp / "overview.json").open('w') as out_f:
+            json.dump(overview, out_f, ensure_ascii=False, indent=4)
+        with (output_dp / "overview.md").open('w') as out_f:
+            out_f.write(generate_overview_content(overview))
+
     references = {}
     overview = []
     folders = set()
@@ -681,11 +689,10 @@ def evaluate_histories(rows, output_dp, apikey=None, galaxy_url=DEFAULT_GALAXY_U
         except Exception as e:  # keep going with the other histories
             entry['error'] = str(e)
         overview.append(entry)
-    output_dp.mkdir(parents=True, exist_ok=True)
-    with (output_dp / "overview.json").open('w') as out_f:
-        json.dump(overview, out_f, ensure_ascii=False, indent=4)
-    with (output_dp / "overview.md").open('w') as out_f:
-        out_f.write(generate_overview_content(overview))
+        # written after each history, so an interrupted run keeps the histories already evaluated
+        write_overview()
+    if not overview:
+        write_overview()
     return overview
 
 

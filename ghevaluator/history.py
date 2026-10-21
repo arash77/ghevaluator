@@ -53,7 +53,7 @@ def get_hist_info(hist_url, apikey=None):
     hist_id = parse.parse_qs(url.query).get("id", [None])[0]
     if hist_id is None:
         # /u/<username>/h/<slug> links redirect to a URL with the history id
-        r = requests.get(hist_url, allow_redirects=False)
+        r = requests.get(hist_url, allow_redirects=False, timeout=60)
         location = parse.urlparse(r.headers.get("Location", ""))
         hist_id = parse.parse_qs(location.query).get("id", [None])[0]
     if hist_id is None:
@@ -100,7 +100,7 @@ def api_get(galaxy_url, path, apikey=None, params=None):
     :return: decoded JSON response
     """
     headers = {"x-api-key": apikey} if apikey else {}
-    r = requests.get(f"{galaxy_url}/api/{path}", params=params, headers=headers)
+    r = requests.get(f"{galaxy_url}/api/{path}", params=params, headers=headers, timeout=60)
     r.raise_for_status()
     return r.json()
 

@@ -352,6 +352,11 @@ def test_read_students_csv(tmp_path):
         "reference": "https://usegalaxy.eu/histories/view?id=c1ad4cd9d7df4ada",
     }]
     assert ghevaluator.safe_name("Student A / B") == "Student_A_B"
+    # saved by Excel as "CSV UTF-8": starts with a byte order mark
+    csv_fp.write_bytes(csv_fp.read_text().encode("utf-8-sig"))
+    assert len(ghevaluator.read_students_csv(csv_fp, "https://usegalaxy.eu")) == 1
+    csv_fp.write_bytes("Student name,Stud hist id,Ref hist id\nStudent A,1,2\n".encode("utf-8-sig"))
+    assert ghevaluator.read_students_csv(csv_fp, "https://usegalaxy.eu")[0]["student"] == "Student A"
 
 
 def test_in_short():
