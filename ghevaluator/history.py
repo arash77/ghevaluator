@@ -8,6 +8,7 @@ the format of a Galaxy workflow file (`.ga`) plus some history information
 """
 
 import json
+import re
 from collections import Counter
 from urllib import parse
 
@@ -36,6 +37,21 @@ CONTENT_KEYS = "id,uuid,hid,name,extension,file_size,history_content_type,visibl
 DONE_STATES = ("ok", "skipped", "deleted", "deleting")
 
 
+def split_galaxy_url(url):
+    """
+    Split a link to a Galaxy page into the Galaxy URL and the path of the page
+
+    Galaxy can run under a path (e.g. https://example.org/galaxy), which is kept in the Galaxy URL.
+
+    :param url: link to a history or workflow page
+    :return: Galaxy URL and path of the page (e.g. /histories/view)
+    """
+    parsed = parse.urlparse(url)
+    page = re.search(r"/(histories|published|u|workflows?)(/|$)", parsed.path)
+    root = parsed.path[:page.start()] if page else parsed.path.rstrip("/")
+    return parsed._replace(path=root, params="", query="", fragment="").geturl(), parsed.path[len(root):] if page else ""
+
+
 def get_hist_info(hist_url, apikey=None):
     """
     Get history name and Galaxy URL from history URL
@@ -49,7 +65,7 @@ def get_hist_info(hist_url, apikey=None):
     :return: Galaxy URL, history name and id
     """
     url = parse.urlparse(hist_url)
-    galaxy_url = url._replace(path="", params="", query="", fragment="").geturl()
+    galaxy_url, page_path = split_galaxy_url(hist_url)
     hist_id = parse.parse_qs(url.query).get("id", [None])[0]
     if hist_id is None:
         # /u/<username>/h/<slug> links redirect to a URL with the history id
@@ -57,7 +73,7 @@ def get_hist_info(hist_url, apikey=None):
         location = parse.urlparse(r.headers.get("Location", ""))
         hist_id = parse.parse_qs(location.query).get("id", [None])[0]
     if hist_id is None:
-        hist_id = find_history_by_slug(galaxy_url, url.path, apikey)
+        hist_id = find_history_by_slug(galaxy_url, page_path, apikey)
     if hist_id is None:
         raise ValueError(f"Could not open the history {hist_url}. Check that the history is shared with the account of the API key, or use a link with the history id (e.g. /histories/view?id=...)")
     hist_name = api_get(galaxy_url, f"histories/{hist_id}", apikey, params={"keys": "name"})["name"]

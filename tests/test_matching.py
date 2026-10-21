@@ -503,3 +503,11 @@ def test_occurrences_count_kept_runs_by_tool():
     hist["steps"][k]["name"] = "Group data"
     number = compare(hist, ref)["comparison_by_reference_workflow_tools"]["Group"]["number"]
     assert number == {"workflow": 1, "history": 1, "same": True}
+
+
+def test_galaxy_under_a_path():
+    split = ghevaluator.split_galaxy_url
+    assert split("https://usegalaxy.eu/histories/view?id=1") == ("https://usegalaxy.eu", "/histories/view")
+    assert split("https://example.org/galaxy/u/someone/h/my-history") == ("https://example.org/galaxy", "/u/someone/h/my-history")
+    assert split("https://example.org/galaxy/published/workflow?id=1") == ("https://example.org/galaxy", "/published/workflow")
+    assert split("https://example.org/galaxy/") == ("https://example.org/galaxy", "")

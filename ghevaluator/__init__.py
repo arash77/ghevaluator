@@ -16,6 +16,7 @@ from ghevaluator.history import (  # noqa: F401
     get_hist_info,
     get_workflow_from_history,
     load_history,
+    split_galaxy_url,
 )
 from ghevaluator.match import (  # noqa: F401
     clean_parameters,
@@ -63,7 +64,7 @@ def get_standard_workflow(wf_url, apikey=None, galaxy_url=DEFAULT_GALAXY_URL):
     wf_id = parse.parse_qs(url.query).get("id", [None])[0]
     if wf_id:
         check_key_host(wf_url, apikey, galaxy_url)
-        server = url._replace(path="", params="", query="", fragment="").geturl()
+        server = split_galaxy_url(wf_url)[0]
         return api_get(server, f"workflows/{wf_id}/download", apikey, params={"format": "json-download"})
     r = requests.get(wf_url, timeout=60)
     r.raise_for_status()
