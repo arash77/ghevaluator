@@ -379,3 +379,23 @@ def test_identical_runs_are_matched_in_order():
     mapping = ghevaluator.match_steps(ref["steps"], hist["steps"])["mapping"]
     assert mapping[int(k)] == int(k)
     assert mapping[twin["id"]] == twin["id"]
+
+
+def test_swapped_inputs_are_not_the_same():
+    """Intersect A with B is not intersect B with A"""
+    ref = load(REF_ID)
+    hist = copy.deepcopy(ref)
+    k = step_by_tool(hist, "gops_intersect_1")
+    connections = hist["steps"][k]["input_connections"]
+    (n1, c1), (n2, c2) = list(connections.items())
+    assert c1["id"] != c2["id"]
+    connections[n1], connections[n2] = c2, c1
+    report = compare(hist, ref)
+    intersect = next(c for c in report["comparison_given_reference_workflow_order"].values() if c["id"]["workflow"] == "gops_intersect_1")
+    assert not intersect["inputs_connection"]["same"]
+    assert report["score"]["steps"] < 100.0
+
+
+def test_multiple_input_names_are_merged():
+    step = {"input_connections": {"inputs": {"id": 1}, "inputs1": {"id": 2}, "input1": {"id": 3}, "input2": [{"id": 4}]}}
+    assert ghevaluator.match.connections_by_name(step) == {"inputs": [1, 2], "input1": [3], "input2": [4]}

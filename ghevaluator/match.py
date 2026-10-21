@@ -113,6 +113,27 @@ def connection_ids(step):
     return ids
 
 
+def connections_by_name(step):
+    """
+    Get the indexes of the steps connected to each input of a step
+
+    Numbered inputs of a multiple input (e.g. `inputs1`, `inputs2` next to `inputs` in jobs)
+    are merged into the input.
+
+    :param step: workflow step
+    :return: dictionary input name -> list of step indexes
+    """
+    names = step.get("input_connections", {})
+    by_name = {}
+    for name, connection in names.items():
+        base = name.rstrip("0123456789")
+        key = base if base != name and base in names else name
+        for c in connection if isinstance(connection, list) else [connection]:
+            if isinstance(c, dict) and "id" in c:
+                by_name.setdefault(key, []).append(int(c["id"]))
+    return by_name
+
+
 def sorted_indexes(steps, inputs):
     """
     Get the indexes of input or tool steps, in step order
@@ -211,15 +232,18 @@ def match_steps(ref_steps, hist_steps):
             continue
         mapping[r] = best
         used.add(best)
-        # bind the reference inputs of this step to the history inputs of the matched step
-        for p in r_prod:
-            if p in mapping or not is_input_step(ref[p]):
-                continue
-            for q in connection_ids(hist[best]):
-                if q in hist and is_input_step(hist[q]) and q not in used and hist[q]["type"] == ref[p]["type"]:
-                    mapping[p] = q
-                    used.add(q)
-                    break
+        # bind the reference inputs of this step to the history inputs of the matched step,
+        # connected to the same input of the tool if possible
+        hist_by_name = connections_by_name(hist[best])
+        for name, r_ids in connections_by_name(ref[r]).items():
+            for p in r_ids:
+                if p not in ref or p in mapping or not is_input_step(ref[p]):
+                    continue
+                for q in hist_by_name.get(name, []) + connection_ids(hist[best]):
+                    if q in hist and is_input_step(hist[q]) and q not in used and hist[q]["type"] == ref[p]["type"]:
+                        mapping[p] = q
+                        used.add(q)
+                        break
     # remaining inputs by order
     free = [q for q in sorted_indexes(hist_steps, inputs=True) if q not in used]
     for p in sorted_indexes(ref_steps, inputs=True):
@@ -241,14 +265,21 @@ def match_steps(ref_steps, hist_steps):
 
 def same_connections(ref_step, hist_step, mapping):
     """
-    Check if the inputs of matched steps come from matched steps
+    Check if the inputs of matched steps come from matched steps, input by input
+    (e.g. swapped inputs of an intersect are not the same)
 
     :param ref_step: reference workflow step
     :param hist_step: history workflow step
     :param mapping: reference index -> history index
     :return: boolean
     """
-    return {mapping.get(p) for p in connection_ids(ref_step)} == set(connection_ids(hist_step))
+    if {mapping.get(p) for p in connection_ids(ref_step)} != set(connection_ids(hist_step)):
+        return False
+    hist_by_name = connections_by_name(hist_step)
+    return all(
+        {mapping.get(p) for p in ids} == set(hist_by_name[name])
+        for name, ids in connections_by_name(ref_step).items() if name in hist_by_name
+    )
 
 
 def text_similarity(text1, text2):
