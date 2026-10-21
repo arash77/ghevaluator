@@ -32,6 +32,9 @@ JOB_FIELDS = [
 # fields of the history contents kept in a loaded history
 CONTENT_KEYS = "id,uuid,hid,name,extension,file_size,history_content_type,visible,deleted"
 
+# job states that are not a failure (deleted jobs have deleted outputs and count as deleted steps)
+DONE_STATES = ("ok", "skipped", "deleted", "deleting")
+
 
 def get_hist_info(hist_url, apikey=None):
     """
@@ -201,8 +204,8 @@ def build_workflow(history):
     Turn a loaded history into a workflow, with steps in the format of a Galaxy workflow file
 
     Besides the usual keys, tool steps have `job_id`, `history_id` (history where the job ran),
-    `cached` (job result reused from the job cache), `end_time`, `inaccessible` (job details can
-    not be read) and all steps have `outputs` and `deleted` (all outputs deleted).
+    `cached` (job result reused from the job cache), `failed` (job failed or not finished), `end_time`,
+    `inaccessible` (job details can not be read) and all steps have `outputs` and `deleted` (all outputs deleted).
 
     :param history: dictionary from `load_history`
     :return: dictionary with the workflow corresponding to the Galaxy history
@@ -255,6 +258,7 @@ def build_workflow(history):
                 "history_id": None,
                 "inaccessible": True,
                 "cached": False,
+                "failed": False,
                 "end_time": None,
             }
             continue
@@ -278,6 +282,8 @@ def build_workflow(history):
             "job_id": job["id"],
             "history_id": job_details["history_id"],
             "cached": bool(job_details.get("copied_from_job_id")),
+            # shortcut: for mapped over steps this is the state of one job, use all jobs if partial failures matter
+            "failed": job_details.get("state") not in DONE_STATES,
             "end_time": job_details.get("update_time"),
         }
     return {

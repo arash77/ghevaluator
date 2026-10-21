@@ -241,7 +241,7 @@ def compare_final_outputs(ref_wf, hist_wf, fetch_text=None, nb_last=5):
     def last_steps(wf):
         # deleted steps are left out, unless all steps were deleted
         steps = [s for s in wf['steps'].values() if s['type'] == 'tool' and s.get('end_time')]
-        kept = [s for s in steps if not s.get('deleted')] or steps
+        kept = [s for s in steps if not s.get('deleted') and not s.get('failed')] or steps
         return sorted(kept, key=lambda s: s['end_time'], reverse=True)
 
     ref_tools = last_steps(ref_wf)
@@ -299,8 +299,12 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
     """
     hist_steps = hist_wf['steps']
     ref_steps = ref_wf['steps']
+    matching = match_steps(ref_steps, hist_steps)
+    mapping = matching['mapping']
+    # steps the tutor threw away (failed or deleted attempts) are not asked from the students
+    scored_ref_steps = {k: s for k, s in ref_steps.items() if int(k) not in matching['thrown_away']}
     ordered_hist_wf, hist_wf_by_tool = reformate_workflows(hist_steps)
-    ordered_ref_wf, ref_wf_by_tool = reformate_workflows(ref_steps)
+    ordered_ref_wf, ref_wf_by_tool = reformate_workflows(scored_ref_steps)
     report['reference_wf'] = ordered_ref_wf
     report['history_wf'] = ordered_hist_wf
     # Compare inputs in both workflows
@@ -313,15 +317,13 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
     }
     # Compare number of steps in both workflows
     hist_step_nb = len(hist_steps) - hist_wf_input_nb
-    ref_step_nb = len(ref_steps) - ref_wf_input_nb
+    ref_step_nb = len(scored_ref_steps) - ref_wf_input_nb
     report['steps'] = {
         'workflow': ref_step_nb,
         'history': hist_step_nb,
         'same': bool(ref_step_nb == hist_step_nb)
     }
-    # Match steps and compare matched steps
-    matching = match_steps(ref_steps, hist_steps)
-    mapping = matching['mapping']
+    # Compare matched steps
     hist_by_order = {s['order']: s for s in ordered_hist_wf}
     main_history = hist_wf.get('main_history_id')
     comparison = {}
@@ -375,6 +377,7 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
         'version': hist_by_order[str(h)]['version'],
         'cached': bool(hist_steps[str(h)].get('cached')),
         'deleted': bool(hist_steps[str(h)].get('deleted')),
+        'failed': bool(hist_steps[str(h)].get('failed')),
     } for h in matching['extra']]
     # Steps whose job ran in another history, i.e. results copied from someone else,
     # or whose job can not be read, usually because it ran in a private history of someone else
@@ -395,8 +398,9 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
         'steps': round(100 * sum(scores) / len(scores), 1) if scores else None,
         'final_output': round(100 * final['best_content_similarity'], 1) if final.get('best_content_similarity') is not None else None,
         'missing_steps': len(matching['missing']),
-        'extra_steps': sum(1 for s in report['extra_steps'] if not s['deleted']),
+        'extra_steps': sum(1 for s in report['extra_steps'] if not s['deleted'] and not s['failed']),
         'deleted_steps': sum(1 for s in hist_steps.values() if s['type'] == 'tool' and s.get('deleted')),
+        'failed_steps': sum(1 for s in hist_steps.values() if s['type'] == 'tool' and s.get('failed')),
         'copied_steps': len(report['copied_steps']),
         'cached_steps': sum(1 for s in hist_steps.values() if s.get('cached')),
         'all_steps_from_history': report['all_steps_from_history'],
@@ -444,9 +448,12 @@ def summarize_report(report):
     formats = [s['tool']['workflow'] for s in matched if s.get('output_formats') and not s['output_formats']['same']]
     if formats:
         sentences.append(f"Other output formats: {count_names(formats)}.")
-    extra = [s['tool'] for s in report['extra_steps'] if not s['deleted']]
+    extra = [s['tool'] for s in report['extra_steps'] if not s['deleted'] and not s['failed']]
     if extra:
         sentences.append(f"Extra steps: {count_names(extra)}.")
+    failed = [s['tool'] for s in report['extra_steps'] if s['failed']]
+    if failed:
+        sentences.append(f"Failed or not finished, so not counted as done: {count_names(failed)}.")
     copied = [s['tool'] for s in report['copied_steps']]
     if copied and not report.get('all_steps_from_history'):
         sentences.append(f"Results copied from another history: {count_names(copied)}.")

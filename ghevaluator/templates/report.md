@@ -27,6 +27,7 @@
 | Missing steps | {{ report.score.missing_steps }} |
 | Extra steps (not deleted) | {{ report.score.extra_steps }} |
 | Deleted steps | {{ report.score.deleted_steps }} |
+| Failed or not finished steps | {{ report.score.failed_steps }} |
 | Steps copied from another or a private history | {{ report.score.copied_steps }} |
 | Steps from the job cache | {{ report.score.cached_steps }} |
 
@@ -71,10 +72,10 @@ Last step of the reference: step {{ report.final_outputs.reference_step.order }}
 {%- if report.extra_steps %}
 ## Steps not in the reference
 
-| History step | Tool | Version | Job cache | Deleted |
-|---|---|---|---|---|
+| History step | Tool | Version | Job cache | Deleted | Failed |
+|---|---|---|---|---|---|
 {%- for s in report.extra_steps %}
-| {{ s.order }} | {{ cell(s.tool) }} | {{ cell(s.version) }} | {% if s.cached %}yes{% endif %} | {% if s.deleted %}yes{% endif %} |
+| {{ s.order }} | {{ cell(s.tool) }} | {{ cell(s.version) }} | {% if s.cached %}yes{% endif %} | {% if s.deleted %}yes{% endif %} | {% if s.failed %}yes{% endif %} |
 {%- endfor %}
 {% endif %}
 {%- if report.copied_steps %}

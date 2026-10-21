@@ -124,17 +124,39 @@ def sorted_indexes(steps, inputs):
     return sorted(int(k) for k, s in steps.items() if is_input_step(s) == inputs)
 
 
+def thrown_away(steps):
+    """
+    Get the tool steps that were thrown away: failed, or with all outputs deleted and not used
+    by a kept step (a deleted output used later, e.g. to save space, is still a real step).
+    If all tool steps were thrown away, none is.
+
+    :param steps: workflow steps (dictionary)
+    :return: set of step indexes
+    """
+    steps = {int(k): s for k, s in steps.items()}
+    away = {i for i, s in steps.items() if not is_input_step(s) and (s.get("failed") or s.get("deleted"))}
+    kept = [i for i in steps if i not in away]
+    while kept:
+        for p in connection_ids(steps[kept.pop()]):
+            if p in away and not steps[p].get("failed"):
+                away.discard(p)
+                kept.append(p)
+    if away == {i for i, s in steps.items() if not is_input_step(s)}:
+        return set()
+    return away
+
+
 def match_steps(ref_steps, hist_steps):
     """
     Match the steps of a history to the steps of a reference
 
-    Reference tool steps are taken in order. A history step can match a reference step if
-    it uses the same tool. Among them, the preferred one has the most inputs coming from steps
-    already matched to the inputs of the reference step, then the most similar parameters, then
-    outputs deleted or not like in the reference (i.e. not deleted for usual references), then
-    outputs used by other steps, then the same tool version, then the
-    same position among the runs of the tool (e.g. the 2nd run with the 2nd run), then the latest
-    end time.
+    Reference tool steps are taken in order, the ones thrown away (see `thrown_away`) last. A history
+    step can match a reference step if it uses the same tool and did not fail; thrown away reference
+    steps only match thrown away history steps. Among them, the preferred one has the most inputs
+    coming from steps already matched to the inputs of the reference step, then thrown away or not
+    like the reference step, then the most similar parameters, then outputs used by other steps,
+    then the same tool version, then the same position among the runs of the tool (e.g. the 2nd run
+    with the 2nd run), then the latest end time.
     Input steps are matched when they feed matched tool steps, the others by order.
 
     :param ref_steps: steps of the reference workflow (dictionary)
@@ -155,14 +177,18 @@ def match_steps(ref_steps, hist_steps):
         return occ
 
     ref_occ, hist_occ = occurrences(ref_steps), occurrences(hist_steps)
+    ref_away, hist_away = thrown_away(ref_steps), thrown_away(hist_steps)
     mapping = {}
     used = set()
-    for r in sorted_indexes(ref_steps, inputs=False):
+    for r in sorted(sorted_indexes(ref_steps, inputs=False), key=lambda r: (r in ref_away, r)):
         # ignore connections to steps that are not there (e.g. deleted)
         r_prod = [p for p in connection_ids(ref[r]) if p in ref]
         best, best_key = None, None
         for h in sorted_indexes(hist_steps, inputs=False):
             if h in used or tool_key(hist[h]["tool_id"]) != tool_key(ref[r]["tool_id"]):
+                continue
+            # a failed run is not done, a thrown away attempt of the reference is not the real step
+            if (r in ref_away and h not in hist_away) or (hist[h].get("failed") and r not in ref_away):
                 continue
             h_prod = [q for q in connection_ids(hist[h]) if q in hist]
             free_inputs = [q for q in h_prod if is_input_step(hist[q]) and q not in used]
@@ -172,8 +198,8 @@ def match_steps(ref_steps, hist_steps):
             )
             key = (
                 connected,
+                (h in hist_away) == (r in ref_away),
                 parameter_agreement(ref[r], hist[h]),
-                hist[h].get("deleted", False) == ref[r].get("deleted", False),
                 h in consumed,
                 hist[h].get("tool_id") == ref[r].get("tool_id"),
                 -abs(hist_occ[h] - ref_occ[r]),
@@ -207,7 +233,8 @@ def match_steps(ref_steps, hist_steps):
                 break
     return {
         "mapping": mapping,
-        "missing": [r for r in sorted_indexes(ref_steps, inputs=False) if r not in mapping],
+        "thrown_away": sorted(ref_away),
+        "missing": [r for r in sorted_indexes(ref_steps, inputs=False) if r not in mapping and r not in ref_away],
         "extra": [h for h in sorted_indexes(hist_steps, inputs=False) if h not in used],
     }
 

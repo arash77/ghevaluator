@@ -97,10 +97,63 @@ def test_wrong_parameter():
 def test_missing_last_step():
     ref = load(REF_ID)
     hist = copy.deepcopy(ref)
-    del hist["steps"]["10"]
+    del hist["steps"]["9"]  # last Sort
+    del hist["steps"]["10"]  # a Sort the tutor deleted, a deleted run still counts as done
     report = compare(hist, ref)
     assert report["score"]["missing_steps"] == 1
-    assert report["comparison_given_reference_workflow_order"][8]["status"] == "missing"
+    assert report["comparison_given_reference_workflow_order"][7]["status"] == "missing"
+
+
+def test_thrown_away_reference_step_is_not_asked():
+    """A step the tutor deleted and did not use is not asked from the students"""
+    ref = load(REF_ID)
+    assert ref["steps"]["10"]["deleted"]
+    hist = copy.deepcopy(ref)
+    del hist["steps"]["10"]
+    report = compare(hist, ref)
+    assert report["score"]["steps"] == 100.0
+    assert report["score"]["missing_steps"] == 0
+    assert report["steps"]["workflow"] == 8
+    # a deleted output still used by a later step is a real step
+    k = step_by_tool(ref, "Grouping1")
+    for o in ref["steps"][k]["outputs"]:
+        o["deleted"] = True
+    ref["steps"][k]["deleted"] = True
+    assert int(k) not in ghevaluator.match.thrown_away(ref["steps"])
+
+
+def test_failed_step_is_not_done():
+    ref = load(REF_ID)
+    hist = copy.deepcopy(ref)
+    k = step_by_tool(hist, "Grouping1")
+    hist["steps"][k]["failed"] = True
+    report = compare(hist, ref)
+    group = next(c for c in report["comparison_given_reference_workflow_order"].values() if c["id"]["workflow"] == "Grouping1")
+    assert group["status"] == "missing"
+    assert report["score"]["failed_steps"] == 1
+    assert report["score"]["extra_steps"] == 0
+    assert "Failed or not finished, so not counted as done: Group." in report["in_short"]
+    # a failed attempt of the tutor is not asked either
+    report = compare(copy.deepcopy(hist), hist)
+    assert report["score"]["missing_steps"] == 0
+    assert report["steps"]["workflow"] == 7
+
+
+def test_kept_run_is_preferred_to_deleted_run():
+    """Right settings in a deleted run, wrong settings in the kept and used run: the kept run counts"""
+    ref = load(REF_ID)
+    hist = copy.deepcopy(ref)
+    k = step_by_tool(hist, "Grouping1")
+    deleted = copy.deepcopy(hist["steps"][k])
+    deleted["id"] = len(hist["steps"])
+    deleted["deleted"] = True
+    hist["steps"][str(deleted["id"])] = deleted
+    set_parameter(hist["steps"][k], "ignorecase", "true")
+    report = compare(hist, ref)
+    group = next(c for c in report["comparison_given_reference_workflow_order"].values() if c["id"]["workflow"] == "Grouping1")
+    assert group["order"]["history"] == k
+    assert group["parameters"]["wrong"] == 1
+    assert [s["order"] for s in report["extra_steps"]] == [str(deleted["id"])]
 
 
 def test_missing_middle_step_breaks_connections():
@@ -213,7 +266,7 @@ def test_real_other_run():
     hist = load(STUDENT_ID)
     report = compare(hist, ref)
     missing = [c["id"]["workflow"] for c in report["comparison_given_reference_workflow_order"].values() if c["status"] == "missing"]
-    assert missing == ["tp_sort_header_tool", "tp_sort_header_tool"]
+    assert missing == ["tp_sort_header_tool"]
     # 4 steps not in the reference, 3 of them deleted by the student
     assert len(report["extra_steps"]) == 4
     assert report["score"]["extra_steps"] == 1
@@ -261,7 +314,7 @@ def test_reports_render():
     html = ghevaluator.generate_html_report_content(report)
     assert "Steps not in the reference" in html and "Final output" in html
     md = ghevaluator.generate_markdown_report_content(report)
-    assert "| Step score | 77.8 % |" in md
+    assert "| Step score | 87.5 % |" in md
     assert "missing" in md
 
 
@@ -283,11 +336,11 @@ def test_read_students_csv(tmp_path):
 
 def test_in_short():
     report = compare(load(STUDENT_ID), load(REF_ID))
-    assert report["in_short"] == ["7 of 9 steps done. Missing: Sort (2 times).", "Extra steps: Select last."]
+    assert report["in_short"] == ["7 of 8 steps done. Missing: Sort.", "Extra steps: Select last."]
     ref = load(REF_ID)
     hist = copy.deepcopy(ref)
     set_parameter(hist["steps"][step_by_tool(hist, "Grouping1")], "ignorecase", "true")
-    assert compare(hist, ref)["in_short"] == ["All 9 steps done.", "Different settings (number of parameters): Group (1)."]
+    assert compare(hist, ref)["in_short"] == ["All 8 steps done.", "Different settings (number of parameters): Group (1)."]
 
 
 def test_overview():
@@ -297,7 +350,7 @@ def test_overview():
         {"student": "Student B", "tutorial": "peaks", "report": "Student_B_peaks/report.md", "score": None, "in_short": [], "error": "400 Client Error"},
     ]
     content = ghevaluator.generate_overview_content(rows)
-    assert "| Student A | peaks | 77.8 % |  | 7 of 9 steps done. Missing: Sort (2 times). Extra steps: Select last. | [report](Student_A_peaks/report.md) |" in content
+    assert "| Student A | peaks | 87.5 % |  | 7 of 8 steps done. Missing: Sort. Extra steps: Select last. | [report](Student_A_peaks/report.md) |" in content
     assert "Could not be evaluated: 400 Client Error" in content
 
 
