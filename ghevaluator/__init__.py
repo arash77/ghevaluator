@@ -169,10 +169,11 @@ def fill_step_report(ref_step, hist_step=None):
     }
     # compare parameters
     for p in ref_step['parameters']:
+        # a parameter missing in the history step is compared as empty
         s_report['parameters']['details'][p] = {
             'workflow': ref_step['parameters'][p],
-            'history': hist_step['parameters'][p] if hist_step is not None and p in hist_step['parameters'] else None,
-            'same': bool(ref_step['parameters'][p] == hist_step['parameters'][p]) if hist_step is not None and p in hist_step['parameters'] else False
+            'history': hist_step['parameters'].get(p) if hist_step is not None else None,
+            'same': hist_step is not None and ref_step['parameters'][p] == hist_step['parameters'].get(p)
         }
         if s_report['parameters']['details'][p]['same']:
             s_report['parameters']['wrong'] -= 1

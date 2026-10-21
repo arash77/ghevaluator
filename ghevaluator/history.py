@@ -267,8 +267,6 @@ def build_workflow(history):
         for name, inp in job_details["inputs"].items():
             producer = producers.get(inp.get("id"), producers.get(inp.get("uuid")))
             input_connections[name] = {} if producer is None else {"id": producer, "output_name": "output"}
-            if "|" not in name:
-                parameters.setdefault(name, "null")
         steps[str(index)] = {
             "id": index,
             "name": job["tool_name"],

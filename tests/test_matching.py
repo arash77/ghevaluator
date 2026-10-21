@@ -58,7 +58,27 @@ def test_group_summary_jobs_merges_mapped_over_entries():
 
 def test_normalize_parameters():
     assert ghevaluator.clean_parameters('{"a": "\\"7\\"", "b": 7, "c": "null", "d": {"__class__": "ConnectedValue"}, "chromInfo": "x", "__use_cached_job__": "true"}') == {
-        "a": "7", "b": "7", "c": None, "d": None}
+        "a": "7", "b": "7", "c": None}
+
+
+def test_data_inputs_and_element_names_are_not_settings():
+    """Datasets picked in a job, connected inputs in a workflow file and collection element names are not settings"""
+    job = {
+        "reference_source": {"__current_case__": 1, "fasta_ref": {"values": [{"id": 157186850, "src": "hda"}]}, "reference_source_selector": "history"},
+        "input_file|__identifier__": "ERR1203059",
+        "queries": [{"input2": {"values": [{"id": 1, "src": "hda"}]}, "header": "true"}],
+    }
+    workflow = {"reference_source": {"fasta_ref": {"__class__": "ConnectedValue"}, "reference_source_selector": "history"}, "queries": [{"input2": {"__class__": "ConnectedValue"}, "header": True}]}
+    assert ghevaluator.clean_parameters(job) == ghevaluator.clean_parameters(workflow) == {
+        "reference_source": {"reference_source_selector": "history"}, "queries": [{"header": "true"}]}
+
+
+def test_multiple_inputs_are_not_settings():
+    """Numbered inputs of a multiple input (inputs1 ... inputs20) are not settings"""
+    tb = load(TB_ID)
+    cat = tb["steps"][step_by_tool(tb, "tp_cat")]
+    assert len(cat["input_connections"]) > 20
+    assert list(ghevaluator.clean_parameters(cat["tool_state"])) == ["queries"]
 
 
 def test_same_history():

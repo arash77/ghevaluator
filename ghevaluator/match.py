@@ -13,6 +13,35 @@ INPUT_TYPES = ("data_input", "data_collection_input", "parameter_input")
 # parameters depending on the Galaxy server or the run, not on the analysis
 IGNORED_PARAMETERS = ["__page__", "__input_ext", "chromInfo", "__rerun_remap_job_id__", "dbkey", "__job_resource", "__workflow_invocation_uuid__", "__use_cached_job__"]
 
+# value of a data input: compared as a connection, not as a setting
+CONNECTED = object()
+
+
+def is_data_value(value):
+    """
+    Check if a parameter value is a data input: a connection in a workflow file, datasets in a job
+
+    :param value: decoded parameter value
+    :return: boolean
+    """
+    if value.get("__class__") == "ConnectedValue" or value.get("src") in ("hda", "hdca", "ldda", "dce"):
+        return True
+    values = value.get("values")
+    return set(value) == {"values"} and isinstance(values, list) and all(isinstance(v, dict) and "src" in v for v in values)
+
+
+def is_ignored(name, nested=False):
+    """
+    Check if a parameter is ignored: internal parameters and element names of collections
+
+    :param name: parameter name
+    :param nested: True for a parameter inside a conditional, section or repeat
+    :return: boolean
+    """
+    if name.endswith("__identifier__"):
+        return True
+    return name == "__current_case__" if nested else name in IGNORED_PARAMETERS
+
 
 def is_input_step(step):
     """
@@ -42,8 +71,9 @@ def normalize_value(value):
     Turn a parameter value into a comparable value
 
     Workflow files and jobs store values differently (e.g. `7`, `"7"` or `"\\"7\\""`,
-    connected inputs as `"null"` or `{"__class__": "ConnectedValue"}`), so JSON strings
-    are decoded, connected and runtime values become None and scalars become strings.
+    data inputs as `{"__class__": "ConnectedValue"}` or `{"values": [{"id": ..., "src": "hda"}]}`),
+    so JSON strings are decoded, data inputs become `CONNECTED` and are left out of dictionaries
+    and lists, runtime values become None and scalars become strings.
 
     :param value: parameter value
     :return: normalized value
@@ -59,11 +89,13 @@ def normalize_value(value):
             break
         value = decoded
     if isinstance(value, dict):
-        if value.get("__class__") in ("ConnectedValue", "RuntimeValue"):
+        if is_data_value(value):
+            return CONNECTED
+        if value.get("__class__") == "RuntimeValue":
             return None
-        return {k: normalize_value(v) for k, v in value.items() if k != "__current_case__"}
+        return without_data({k: normalize_value(v) for k, v in value.items() if not is_ignored(k, nested=True)})
     if isinstance(value, list):
-        return [normalize_value(v) for v in value]
+        return [v for v in map(normalize_value, value) if v is not CONNECTED]
     if value is None or isinstance(value, str):
         return value
     return json.dumps(value)
@@ -77,9 +109,17 @@ def clean_parameters(tool_state):
     :return: dictionary with parameters
     """
     parameters = json.loads(tool_state) if isinstance(tool_state, str) else dict(tool_state or {})
-    for p in IGNORED_PARAMETERS:
-        parameters.pop(p, None)
-    return {p: normalize_value(v) for p, v in parameters.items()}
+    return without_data({p: normalize_value(v) for p, v in parameters.items() if not is_ignored(p)})
+
+
+def without_data(parameters):
+    """
+    Remove the data inputs from normalized parameters
+
+    :param parameters: dictionary with normalized values
+    :return: dictionary
+    """
+    return {p: v for p, v in parameters.items() if v is not CONNECTED}
 
 
 def parameter_agreement(ref_step, hist_step):
@@ -94,7 +134,7 @@ def parameter_agreement(ref_step, hist_step):
     hist_params = clean_parameters(hist_step.get("tool_state", "{}"))
     if not ref_params:
         return 1.0
-    same = sum(1 for p, v in ref_params.items() if p in hist_params and hist_params[p] == v)
+    same = sum(1 for p, v in ref_params.items() if hist_params.get(p) == v)
     return same / len(ref_params)
 
 
