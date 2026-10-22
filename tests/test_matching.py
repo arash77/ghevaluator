@@ -620,3 +620,41 @@ def test_wrong_input_with_a_reference_without_datatypes():
     report = compare(hist, ref)
     other_inputs = [c["id"]["workflow"] for c in report["comparison_given_reference_workflow_order"].values() if not c["inputs_connection"]["same"]]
     assert other_inputs == ["tp_tail_tool"]
+
+
+def test_deleted_final_result_is_still_a_step():
+    """A deleted step is only a thrown away attempt when the tool also has a kept run"""
+    ref = load(REF_ID)
+    assert ghevaluator.match.thrown_away(ref["steps"]) == {10}
+    ref["steps"]["9"]["deleted"] = True  # both Sorts deleted: no kept run, so no attempt
+    assert ghevaluator.match.thrown_away(ref["steps"]) == set()
+
+
+def test_counts_agree_with_the_matching():
+    ref = load(REF_ID)
+    hist = copy.deepcopy(ref)
+    del hist["steps"]["10"]
+    hist["steps"]["9"]["deleted"] = True  # the student deleted the final result
+    report = compare(hist, ref)
+    assert report["in_short"][0] == "All 8 steps done."
+    assert report["steps"] == {"workflow": 8, "history": 8, "same": True}
+    assert report["comparison_by_reference_workflow_tools"]["Sort"]["number"]["same"]
+    # two different tools with the same name are counted together
+    ref = load(REF_ID)
+    ref["steps"][step_by_tool(ref, "tp_tail_tool")]["name"] = "Sort"
+    by_tool = compare(copy.deepcopy(ref), ref)["comparison_by_reference_workflow_tools"]
+    assert by_tool["Sort"]["number"] == {"workflow": 2, "history": 2, "same": True}
+
+
+def test_failed_steps_are_listed_also_when_matched():
+    """The tutor and the student both have a failed Group attempt: it is said"""
+    ref = load(REF_ID)
+    k = step_by_tool(ref, "Grouping1")
+    failed = copy.deepcopy(ref["steps"][k])
+    failed["id"] = len(ref["steps"])
+    failed["failed"] = True
+    ref["steps"][str(failed["id"])] = failed
+    report = compare(copy.deepcopy(ref), ref)
+    assert report["score"]["failed_steps"] == 1
+    assert "Failed or not finished, so not counted as done: Group." in report["in_short"]
+    assert report["score"]["steps"] == 100.0

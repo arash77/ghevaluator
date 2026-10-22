@@ -200,23 +200,25 @@ def sorted_indexes(steps, inputs):
 
 def thrown_away(steps):
     """
-    Get the tool steps that were thrown away: failed, or with all outputs deleted and not used
-    by a kept step (a deleted output used later, e.g. to save space, is still a real step).
-    If all tool steps were thrown away, none is.
+    Get the tool steps that were thrown away: failed, or attempts replaced by another run, i.e. with
+    all outputs deleted, not used by a kept step (a deleted output used later, e.g. to save space, is
+    still a real step) and with a kept run of the same tool (a deleted final result is still a result)
 
     :param steps: workflow steps (dictionary)
     :return: set of step indexes
     """
     steps = {int(k): s for k, s in steps.items()}
     away = {i for i, s in steps.items() if not is_input_step(s) and (s.get("failed") or s.get("deleted"))}
-    kept = [i for i in steps if i not in away]
-    while kept:
-        for p in connection_ids(steps[kept.pop()]):
-            if p in away and not steps[p].get("failed"):
-                away.discard(p)
-                kept.append(p)
-    if away == {i for i, s in steps.items() if not is_input_step(s)}:
-        return set()
+    changed = True
+    while changed:
+        changed = False
+        kept = [i for i in steps if i not in away]
+        used = {p for i in kept for p in connection_ids(steps[i])}
+        kept_tools = {tool_key(steps[i]["tool_id"]) for i in kept if not is_input_step(steps[i])}
+        for i in list(away):
+            if not steps[i].get("failed") and (i in used or tool_key(steps[i]["tool_id"]) not in kept_tools):
+                away.discard(i)
+                changed = True
     return away
 
 
@@ -321,6 +323,7 @@ def match_steps(ref_steps, hist_steps):
     return {
         "mapping": mapping,
         "thrown_away": sorted(ref_away),
+        "hist_thrown_away": sorted(hist_away),
         "missing": [r for r in sorted_indexes(ref_steps, inputs=False) if r not in mapping and r not in ref_away],
         "extra": [h for h in sorted_indexes(hist_steps, inputs=False) if h not in used],
     }

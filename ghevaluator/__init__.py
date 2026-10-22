@@ -25,7 +25,6 @@ from ghevaluator.match import (  # noqa: F401
     match_steps,
     same_connections,
     text_similarity,
-    thrown_away,
     tool_key,
 )
 
@@ -350,8 +349,8 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
         "same": bool(ref_wf_input_nb == hist_wf_input_nb)
     }
     # Compare number of steps in both workflows
-    # thrown away steps (failed, or deleted and not used) are counted on neither side
-    hist_away = thrown_away(hist_steps)
+    # thrown away steps (failed, or replaced attempts) are counted on neither side
+    hist_away = set(matching['hist_thrown_away'])
     hist_step_nb = len(hist_steps) - hist_wf_input_nb - len(hist_away)
     ref_step_nb = len(scored_ref_steps) - ref_wf_input_nb
     report['steps'] = {
@@ -402,8 +401,9 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
         details = {}
         for j, ref_step in enumerate(ref_tool_steps):
             details[j] = next(c for i, c in comparison.items() if ordered_ref_wf[i] is ref_step)
-        key = tool_key(ref_steps[ref_tool_steps[0]['order']]['tool_id'])
-        hist_runs = sum(1 for k, s in hist_steps.items() if s.get('tool_id') and tool_key(s['tool_id']) == key and int(k) not in hist_away)
+        # tools with the same name (e.g. two Sort tools) are counted together
+        keys = {tool_key(ref_steps[s['order']]['tool_id']) for s in ref_tool_steps}
+        hist_runs = sum(1 for k, s in hist_steps.items() if s.get('tool_id') and tool_key(s['tool_id']) in keys and int(k) not in hist_away)
         by_tool[tool] = {
             'number': {
                 'workflow': len(ref_tool_steps),
@@ -423,6 +423,8 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
         'deleted': bool(hist_steps[str(h)].get('deleted')),
         'failed': bool(hist_steps[str(h)].get('failed')),
     } for h in matching['extra']]
+    # Steps that failed or did not finish, also the ones matched to a failed attempt of the reference
+    report['failed_steps'] = [{'order': k, 'tool': s['name']} for k, s in hist_steps.items() if s['type'] == 'tool' and s.get('failed')]
     # Steps whose job ran in another history, i.e. results copied from someone else,
     # or whose job can not be read, usually because it ran in a private history of someone else
     report['copied_steps'] = [{
@@ -444,7 +446,7 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
         'missing_steps': len(matching['missing']),
         'extra_steps': sum(1 for s in report['extra_steps'] if not s['deleted'] and not s['failed']),
         'deleted_steps': sum(1 for s in hist_steps.values() if s['type'] == 'tool' and s.get('deleted')),
-        'failed_steps': sum(1 for s in hist_steps.values() if s['type'] == 'tool' and s.get('failed')),
+        'failed_steps': len(report['failed_steps']),
         'copied_steps': len(report['copied_steps']),
         'cached_steps': sum(1 for s in hist_steps.values() if s.get('cached')),
         'all_steps_from_history': report['all_steps_from_history'],
@@ -495,7 +497,7 @@ def summarize_report(report):
     extra = [s['tool'] for s in report['extra_steps'] if not s['deleted'] and not s['failed']]
     if extra:
         sentences.append(f"Extra steps: {count_names(extra)}.")
-    failed = [s['tool'] for s in report['extra_steps'] if s['failed']]
+    failed = [s['tool'] for s in report.get('failed_steps', [])]
     if failed:
         sentences.append(f"Failed or not finished, so not counted as done: {count_names(failed)}.")
     copied = [s['tool'] for s in report['copied_steps']]
