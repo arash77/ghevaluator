@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import csv
+import io
 import json
 import re
 
@@ -656,17 +657,30 @@ def read_students_csv(csv_fp, galaxy_url):
         value = value.strip()
         return value if value.startswith("http") else f"{galaxy_url.rstrip('/')}/histories/view?id={value}"
 
+    # Excel saves "CSV UTF-8" with a byte order mark (utf-8-sig), and in some languages (e.g. German)
+    # "CSV" with ";" and the Windows encoding
+    raw = Path(csv_fp).read_bytes()
+    try:
+        text = raw.decode('utf-8-sig')
+    except UnicodeDecodeError:
+        text = raw.decode('cp1252')
+    try:
+        dialect = csv.Sniffer().sniff(text.split('\n', 1)[0], delimiters=',;\t')
+    except csv.Error:
+        dialect = csv.excel
+    reader = csv.DictReader(io.StringIO(text, newline=''), dialect=dialect)
+    columns = {(c or '').strip().lower() for c in reader.fieldnames or []}
+    if not columns & {'stud hist id', 'student_history'}:
+        raise ValueError(f"No column 'stud hist id' in {csv_fp}, the columns are: {', '.join(sorted(columns))}")
     rows = []
-    # utf-8-sig: CSV files saved by Excel start with a byte order mark
-    with open(csv_fp, newline='', encoding='utf-8-sig') as f:
-        for row in csv.DictReader(f):
-            row = {(k or '').strip().lower(): (v or '').strip() for k, v in row.items()}
-            student = row.get('student name') or row.get('student')
-            hist = row.get('stud hist id') or row.get('student_history')
-            ref = row.get('ref hist id') or row.get('ref_history')
-            if not (student and hist and ref):
-                continue
-            rows.append({'student': student, 'tutorial': row.get('tutorial name', ''), 'history': to_url(hist), 'reference': to_url(ref)})
+    for row in reader:
+        row = {(k or '').strip().lower(): (v or '').strip() for k, v in row.items() if isinstance(v, str) or v is None}
+        student = row.get('student name') or row.get('student')
+        hist = row.get('stud hist id') or row.get('student_history')
+        ref = row.get('ref hist id') or row.get('ref_history')
+        if not (student and hist and ref):
+            continue
+        rows.append({'student': student, 'tutorial': row.get('tutorial name', ''), 'history': to_url(hist), 'reference': to_url(ref)})
     return rows
 
 
@@ -710,7 +724,13 @@ def evaluate_histories(rows, output_dp, apikey=None, galaxy_url=DEFAULT_GALAXY_U
         entry = dict(row, report=f"{folder}/report.md", score=None, in_short=[], error=None)
         try:
             if row['reference'] not in references:
-                references[row['reference']] = get_reference(row['reference'], apikey, galaxy_url=galaxy_url)
+                # a reference that can not be loaded is not tried again for each history
+                try:
+                    references[row['reference']] = get_reference(row['reference'], apikey, galaxy_url=galaxy_url)
+                except Exception as e:
+                    references[row['reference']] = e
+            if isinstance(references[row['reference']], Exception):
+                raise references[row['reference']]
             report = evaluate(row['history'], row['reference'], apikey, references[row['reference']], galaxy_url=galaxy_url)
             generate_report_files(report, output_dp / folder)
             entry['score'] = report['score']

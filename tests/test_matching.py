@@ -373,6 +373,31 @@ def test_read_students_csv(tmp_path):
     assert len(ghevaluator.read_students_csv(csv_fp, "https://usegalaxy.eu")) == 1
     csv_fp.write_bytes("Student name,Stud hist id,Ref hist id\nStudent A,1,2\n".encode("utf-8-sig"))
     assert ghevaluator.read_students_csv(csv_fp, "https://usegalaxy.eu")[0]["student"] == "Student A"
+    # German Excel: ";" and the Windows encoding
+    csv_fp.write_bytes("Student name;Stud hist id;Ref hist id\nJ\u00fcrgen;1;2\n".encode("cp1252"))
+    assert ghevaluator.read_students_csv(csv_fp, "https://usegalaxy.eu")[0]["student"] == "J\u00fcrgen"
+    # no known column: an error, not an empty overview
+    csv_fp.write_text("Name,History\nA,1\n")
+    try:
+        ghevaluator.read_students_csv(csv_fp, "https://usegalaxy.eu")
+    except ValueError as e:
+        assert "stud hist id" in str(e)
+    else:
+        raise AssertionError("no error")
+
+
+def test_reference_that_can_not_be_loaded_is_tried_once(monkeypatch, tmp_path):
+    calls = []
+
+    def failing_reference(*args, **kwargs):
+        calls.append(args)
+        raise ValueError("reference not shared")
+
+    monkeypatch.setattr(ghevaluator, "get_reference", failing_reference)
+    rows = [{"student": f"Student {i}", "history": f"https://usegalaxy.eu/histories/view?id={i}", "reference": "https://usegalaxy.eu/histories/view?id=f"} for i in range(3)]
+    overview = ghevaluator.evaluate_histories(rows, tmp_path)
+    assert len(calls) == 1
+    assert all(r["error"] == "reference not shared" for r in overview)
 
 
 def test_in_short():

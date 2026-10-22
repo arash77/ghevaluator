@@ -18,7 +18,6 @@ Galaxy History Evaluator can be used via command-line
                             URL to Galaxy history
       -w WORKFLOW_URL, --workflow_url WORKFLOW_URL
                             URL to reference workflow: a workflow file (.ga) or a Galaxy workflow link
-                            with the workflow id
       -r REFERENCE_HISTORY_URL, --reference_history_url REFERENCE_HISTORY_URL
                             URL to reference Galaxy history
       -c CSV, --csv CSV     CSV file with several histories to evaluate, with columns 'student name',

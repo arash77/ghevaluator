@@ -16,7 +16,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description='Compare Galaxy histories to a reference workflow or history and generate JSON, HTML and Markdown reports')
     parser.add_argument('-u', '--history_url', help="URL to Galaxy history")
     reference = parser.add_mutually_exclusive_group()
-    reference.add_argument('-w', '--workflow_url', help="URL to reference workflow: a workflow file (.ga) or a Galaxy workflow link with the workflow id")
+    reference.add_argument('-w', '--workflow_url', help="URL to reference workflow: a workflow file (.ga) or a Galaxy workflow link")
     reference.add_argument('-r', '--reference_history_url', help="URL to reference Galaxy history")
     parser.add_argument('-c', '--csv', type=Path, help="CSV file with several histories to evaluate, with columns 'student name', 'stud hist id', 'ref hist id' and optional 'tutorial name' (ids or URLs)")
     parser.add_argument('-g', '--galaxy_url', default=ghevaluator.DEFAULT_GALAXY_URL, help="Galaxy server of the API key, also used for history ids in the CSV file. The API key is only sent to this server (default: https://usegalaxy.eu)")
