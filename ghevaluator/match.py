@@ -174,6 +174,19 @@ def connections_by_name(step):
     return by_name
 
 
+def same_format(ref_input, hist_input):
+    """
+    Check if two input steps can be the same data: same datatype, if both are known
+    (a workflow file does not have the datatype of its inputs)
+
+    :param ref_input: input step of the reference
+    :param hist_input: input step of the history
+    :return: boolean
+    """
+    formats = [(s.get("outputs") or [{}])[0].get("extension") for s in (ref_input, hist_input)]
+    return None in formats or formats[0] == formats[1]
+
+
 def sorted_indexes(steps, inputs):
     """
     Get the indexes of input or tool steps, in step order
@@ -218,7 +231,10 @@ def match_steps(ref_steps, hist_steps):
     like the reference step, then the most similar parameters, then outputs used by other steps,
     then the same tool version, then the same position among the runs of the tool (e.g. the 2nd run
     with the 2nd run), then the latest end time.
-    Input steps are matched when they feed matched tool steps, the others by order.
+    Input steps are matched after the tool steps: each matched tool step votes for the history input
+    it used where the reference used an input (on the same input of the tool if possible), the input
+    with the most votes wins, then the same datatype, then the same position among the inputs. So one
+    step run on the wrong input does not change which input is which. The others are matched by order.
 
     :param ref_steps: steps of the reference workflow (dictionary)
     :param hist_steps: steps of the history workflow (dictionary)
@@ -272,29 +288,36 @@ def match_steps(ref_steps, hist_steps):
             continue
         mapping[r] = best
         used.add(best)
-        # bind the reference inputs of this step to the history inputs of the matched step,
-        # connected to the same input of the tool if possible
-        hist_by_name = connections_by_name(hist[best])
+    # inputs: votes of the matched tool steps
+    ref_inputs, hist_inputs = sorted_indexes(ref_steps, inputs=True), sorted_indexes(hist_steps, inputs=True)
+    votes = {}
+    for r, h in list(mapping.items()):
+        hist_by_name = connections_by_name(hist[h])
         for name, r_ids in connections_by_name(ref[r]).items():
+            candidates = [q for q in hist_by_name.get(name, connection_ids(hist[h])) if q in hist and is_input_step(hist[q])]
             for p in r_ids:
-                if p not in ref or p in mapping or not is_input_step(ref[p]):
-                    continue
-                for q in hist_by_name.get(name, []) + connection_ids(hist[best]):
-                    if q in hist and is_input_step(hist[q]) and q not in used and hist[q]["type"] == ref[p]["type"]:
-                        mapping[p] = q
-                        used.add(q)
-                        break
-    # remaining inputs by order
-    free = [q for q in sorted_indexes(hist_steps, inputs=True) if q not in used]
+                if p in ref and is_input_step(ref[p]):
+                    for q in candidates:
+                        if hist[q]["type"] == ref[p]["type"]:
+                            votes[(p, q)] = votes.get((p, q), 0) + 1
+    for (p, q), _ in sorted(votes.items(), key=lambda pv: (
+            -pv[1],
+            not same_format(ref[pv[0][0]], hist[pv[0][1]]),
+            abs(ref_inputs.index(pv[0][0]) - hist_inputs.index(pv[0][1])))):
+        if p not in mapping and q not in used:
+            mapping[p] = q
+            used.add(q)
+    # remaining inputs by order, of the same datatype if possible
+    free = [q for q in hist_inputs if q not in used]
     for p in sorted_indexes(ref_steps, inputs=True):
         if p in mapping:
             continue
-        for q in free:
-            if hist[q]["type"] == ref[p]["type"]:
-                mapping[p] = q
-                used.add(q)
-                free.remove(q)
-                break
+        candidates = [q for q in free if hist[q]["type"] == ref[p]["type"]]
+        q = next((q for q in candidates if same_format(ref[p], hist[q])), candidates[0] if candidates else None)
+        if q is not None:
+            mapping[p] = q
+            used.add(q)
+            free.remove(q)
     return {
         "mapping": mapping,
         "thrown_away": sorted(ref_away),

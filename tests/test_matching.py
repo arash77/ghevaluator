@@ -566,3 +566,57 @@ def test_deleted_runs_finished_or_cancelled():
     hist["steps"][k]["deleted"] = True
     group = next(c for c in compare(hist, ref)["comparison_given_reference_workflow_order"].values() if c["id"]["workflow"] == "Grouping1")
     assert group["status"] == "matched" and group["deleted"]
+
+
+def test_step_on_the_wrong_input_does_not_blame_the_others():
+    """Select last run on the second upload instead of the first: only Select last is on other inputs"""
+    ref = load(REF_ID)
+    hist = copy.deepcopy(ref)
+    k = step_by_tool(hist, "tp_tail_tool")
+    flanks = step_by_tool(hist, "get_flanks1")
+    wrong_input = ghevaluator.connection_ids(hist["steps"][flanks])[0]
+    for c in hist["steps"][k]["input_connections"].values():
+        assert c["id"] != wrong_input
+        c["id"] = wrong_input
+    report = compare(hist, ref)
+    other_inputs = [c["id"]["workflow"] for c in report["comparison_given_reference_workflow_order"].values() if not c["inputs_connection"]["same"]]
+    assert other_inputs == ["tp_tail_tool"]
+
+
+def swap_inputs(wf, a, b):
+    """Swap two input steps of a workflow, as if the files were uploaded in the other order"""
+    sa, sb = wf["steps"][str(a)], wf["steps"][str(b)]
+    sa["outputs"], sb["outputs"] = sb["outputs"], sa["outputs"]
+    for step in wf["steps"].values():
+        for c in step["input_connections"].values():
+            for conn in c if isinstance(c, list) else [c]:
+                if conn.get("id") in (a, b):
+                    conn["id"] = b if conn["id"] == a else a
+
+
+def test_uploads_in_another_order_with_other_datatypes():
+    """Same analysis, files uploaded in the other order and both detected as tabular: nothing is wrong"""
+    ref = load(REF_ID)
+    hist = copy.deepcopy(ref)
+    inputs = ghevaluator.match.sorted_indexes(hist["steps"], inputs=True)
+    swap_inputs(hist, inputs[0], inputs[1])
+    for i in inputs:
+        for o in hist["steps"][str(i)]["outputs"]:
+            o["extension"] = "tabular"
+    report = compare(hist, ref)
+    assert report["score"]["steps"] == 100.0
+
+
+def test_wrong_input_with_a_reference_without_datatypes():
+    """Like a workflow file: the step run on the wrong input is the only one on other inputs"""
+    ref = load(REF_ID)
+    for i in ghevaluator.match.sorted_indexes(ref["steps"], inputs=True):
+        ref["steps"][str(i)]["outputs"] = []
+    hist = copy.deepcopy(load(REF_ID))
+    k = step_by_tool(hist, "tp_tail_tool")
+    wrong_input = ghevaluator.connection_ids(hist["steps"][step_by_tool(hist, "get_flanks1")])[0]
+    for c in hist["steps"][k]["input_connections"].values():
+        c["id"] = wrong_input
+    report = compare(hist, ref)
+    other_inputs = [c["id"]["workflow"] for c in report["comparison_given_reference_workflow_order"].values() if not c["inputs_connection"]["same"]]
+    assert other_inputs == ["tp_tail_tool"]

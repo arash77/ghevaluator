@@ -14,6 +14,8 @@ from urllib import parse
 
 import requests
 
+from ghevaluator.match import tool_key
+
 # fields of the job details kept in a loaded history
 JOB_FIELDS = [
     "id",
@@ -344,7 +346,7 @@ def job_finished(job_details):
     :param job_details: job details
     :return: boolean
     """
-    if str(job_details.get("tool_id")).startswith("interactive_tool_"):
+    if tool_key(job_details.get("tool_id")).startswith("interactive_tool_"):
         return job_details.get("state") in DONE_STATES + ("deleted", "deleting")
     return job_details.get("state") in DONE_STATES
 
