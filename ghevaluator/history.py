@@ -56,9 +56,37 @@ def split_galaxy_url(url):
     :return: Galaxy URL and path of the page (e.g. /histories/view)
     """
     parsed = parse.urlparse(url)
-    page = re.search(r"/(histories|published|u|workflows?)(/|$)", parsed.path)
-    root = parsed.path[:page.start()] if page else parsed.path.rstrip("/")
-    return parsed._replace(path=root, params="", query="", fragment="").geturl(), parsed.path[len(root):] if page else ""
+    page = re.search(r"/(histories|history|published|u|workflows?)(/|$)", parsed.path)
+    # without a known page, the Galaxy URL is the server itself
+    root = parsed.path[:page.start()] if page else ""
+    return parsed._replace(path=root, params="", query="", fragment="").geturl(), parsed.path[len(root):]
+
+
+def galaxy_id(value, url):
+    """
+    Check that an id taken from a link is a Galaxy id (hexadecimal), so that it can not change
+    the API path a request is sent to
+
+    :param value: id from the link
+    :param url: the link, for the error message
+    :return: the id
+    :raise ValueError: if it is not a Galaxy id
+    """
+    if not re.fullmatch(r"[0-9a-f]+", value or ""):
+        raise ValueError(f"{url} does not contain a valid Galaxy id")
+    return value
+
+
+def id_from_redirect(url):
+    """
+    Get the id of a /u/<username>/h/<slug> or /u/<username>/w/<slug> link: Galaxy redirects it to a link with the id
+
+    :param url: link
+    :return: id or None
+    """
+    r = SESSION.get(url, allow_redirects=False, timeout=60)
+    location = parse.urlparse(r.headers.get("Location", ""))
+    return parse.parse_qs(location.query).get("id", [None])[0]
 
 
 def get_hist_info(hist_url, apikey=None):
@@ -77,15 +105,16 @@ def get_hist_info(hist_url, apikey=None):
     galaxy_url, page_path = split_galaxy_url(hist_url)
     hist_id = parse.parse_qs(url.query).get("id", [None])[0]
     if hist_id is None:
-        # /u/<username>/h/<slug> links redirect to a URL with the history id
-        r = SESSION.get(hist_url, allow_redirects=False, timeout=60)
-        location = parse.urlparse(r.headers.get("Location", ""))
-        hist_id = parse.parse_qs(location.query).get("id", [None])[0]
+        hist_id = id_from_redirect(hist_url)
     if hist_id is None:
         hist_id = find_history_by_slug(galaxy_url, page_path, apikey)
     if hist_id is None:
         raise ValueError(f"Could not open the history {hist_url}. Check that the history is shared with the account of the API key, or use a link with the history id (e.g. /histories/view?id=...)")
-    hist_name = api_get(galaxy_url, f"histories/{hist_id}", apikey, params={"keys": "name"})["name"]
+    hist_id = galaxy_id(hist_id, hist_url)
+    try:
+        hist_name = api_get(galaxy_url, f"histories/{hist_id}", apikey, params={"keys": "name"})["name"]
+    except requests.HTTPError as e:
+        raise ValueError(f"Could not open the history {hist_url} ({e.response.status_code if e.response is not None else e}). It has to be published, shared via link, or shared with the account of the API key (the key is only sent to the Galaxy server given with --galaxy_url)") from e
     return galaxy_url, hist_name, hist_id
 
 
@@ -125,8 +154,11 @@ def api_get(galaxy_url, path, apikey=None, params=None):
     :return: decoded JSON response
     """
     headers = {"x-api-key": apikey} if apikey else {}
-    # large histories can take minutes, the limit only stops a stalled server
-    r = SESSION.get(f"{galaxy_url}/api/{path}", params=params, headers=headers, timeout=(30, 600))
+    # large histories can take minutes, the limit only stops a stalled server.
+    # No redirects: requests would send the API key on to the other host
+    r = SESSION.get(f"{galaxy_url}/api/{path}", params=params, headers=headers, timeout=(30, 600), allow_redirects=False)
+    if r.is_redirect:
+        raise requests.HTTPError(f"Unexpected redirect from {r.url} to {r.headers.get('Location')}", response=r)
     r.raise_for_status()
     return r.json()
 
@@ -408,8 +440,10 @@ def fetch_dataset_text(galaxy_url, dataset_id, apikey=None, max_bytes=200000):
     """
     headers = {"x-api-key": apikey} if apikey else {}
     try:
-        with SESSION.get(f"{galaxy_url}/api/datasets/{dataset_id}/display", headers=headers, stream=True, timeout=60) as r:
+        with SESSION.get(f"{galaxy_url}/api/datasets/{dataset_id}/display", headers=headers, stream=True, timeout=60, allow_redirects=not apikey) as r:
             r.raise_for_status()
+            if r.is_redirect:
+                return None
             data = r.raw.read(max_bytes, decode_content=True)
     except requests.RequestException:
         return None

@@ -43,13 +43,13 @@ The tool needs:
 
 2. A reference, either
 
-    - URL to a reference workflow (``-w``): a workflow file, or a Galaxy workflow link with the workflow id (e.g. ``/published/workflow?id=...``). Links to the workflows of a tutorial are on the tutorial pages of the Galaxy Training website: https://training.galaxyproject.org/
+    - URL to a reference workflow (``-w``): a workflow file, or a Galaxy workflow link (e.g. ``/published/workflow?id=...`` or ``/u/<username>/w/<slug>``). Links to the workflows of a tutorial are on the tutorial pages of the Galaxy Training website: https://training.galaxyproject.org/
 
         For example: https://training.galaxyproject.org/training-material/topics/introduction/tutorials/galaxy-intro-short/workflows/Galaxy-Workflow-galaxy-intro-short.ga
 
     - or URL to a reference history (``-r``). Output formats and the content of the final output are then compared too.
 
-3. Optionally, a Galaxy API key, if the history is not published or shared via link. The key is only sent to the Galaxy server given with ``-g`` (https://usegalaxy.eu by default): for histories on another server, give that server with ``-g``
+3. Optionally, a Galaxy API key, if the history is not published or shared via link. The key is only sent to the Galaxy server given with ``-g`` (https://usegalaxy.eu by default). Histories on other servers are read without key: give their server with ``-g`` if the key is for that server
 
     To get your own Galaxy API key, please follow the instructions `here <https://training.galaxyproject.org/training-material/faqs/galaxy/preferences_admin_api_key.html>`_
 

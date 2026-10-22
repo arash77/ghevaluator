@@ -476,17 +476,42 @@ def test_job_cache_row_only_for_done_steps():
     assert "Result reused from an earlier job" not in ghevaluator.generate_html_report_content(report)
 
 
-def test_api_key_only_sent_to_its_server():
-    """A link given by a student must not get the tutor's API key"""
-    ghevaluator.check_key_host("https://usegalaxy.eu/histories/view?id=1", "key", "https://usegalaxy.eu")
-    ghevaluator.check_key_host("https://attacker.example/histories/view?id=1", None, "https://usegalaxy.eu")
-    for url in ("https://attacker.example/histories/view?id=1", "http://usegalaxy.eu/histories/view?id=1"):
+def test_api_key_only_sent_to_its_server(monkeypatch):
+    """A link given by a student must not get the tutor's API key, it is read without key"""
+    key_for = ghevaluator.key_for
+    assert key_for("https://usegalaxy.eu/histories/view?id=1", "key", "https://usegalaxy.eu") == "key"
+    assert key_for("https://usegalaxy.eu:443/histories/view?id=1", "key", "https://usegalaxy.eu") == "key"
+    assert key_for("https://attacker.example/histories/view?id=1", "key", "https://usegalaxy.eu") is None
+    assert key_for("http://usegalaxy.eu/histories/view?id=1", "key", "https://usegalaxy.eu") is None
+    keys = []
+    monkeypatch.setattr(ghevaluator, "get_workflow_from_history", lambda url, key=None: keys.append(key) or {"steps": {}})
+    monkeypatch.setattr(ghevaluator, "compare_workflows", lambda *args, **kwargs: {})
+    ghevaluator.evaluate("https://attacker.example/histories/view?id=1", "https://usegalaxy.eu/histories/view?id=2", "key", ref_type="history")
+    assert keys == ["key", None]  # reference on usegalaxy.eu with the key, the other history without
+
+
+def test_ids_and_redirects_can_not_redirect_the_key(monkeypatch):
+    for bad in ("..%2Fusers%2Fcurrent", "../users/current", "abc?x=1"):
         try:
-            ghevaluator.evaluate(url, "https://usegalaxy.eu/histories/view?id=2", "key", ref_wf=({}, "history"))
-        except ValueError as e:
-            assert "only sent to the Galaxy server" in str(e)
+            ghevaluator.galaxy_id(bad, "link")
+        except ValueError:
+            pass
         else:
-            raise AssertionError(url)
+            raise AssertionError(bad)
+    assert ghevaluator.galaxy_id("1e0b67181d3c7c70", "link") == "1e0b67181d3c7c70"
+    redirect = ghevaluator.history.requests.Response()
+    redirect.status_code = 302
+    redirect.headers["Location"] = "https://attacker.example/"
+    redirect.url = "https://usegalaxy.eu/api/histories/1"
+    calls = []
+    monkeypatch.setattr(ghevaluator.history.SESSION, "get", lambda url, **kwargs: calls.append(kwargs) or redirect)
+    try:
+        ghevaluator.history.api_get("https://usegalaxy.eu", "histories/1", "key")
+    except ghevaluator.history.requests.HTTPError as e:
+        assert "Unexpected redirect" in str(e)
+    else:
+        raise AssertionError("redirect followed")
+    assert calls[0]["allow_redirects"] is False
 
 
 def test_reference_type_is_not_guessed_when_given(monkeypatch):
@@ -518,7 +543,10 @@ def test_galaxy_under_a_path():
     assert split("https://usegalaxy.eu/histories/view?id=1") == ("https://usegalaxy.eu", "/histories/view")
     assert split("https://example.org/galaxy/u/someone/h/my-history") == ("https://example.org/galaxy", "/u/someone/h/my-history")
     assert split("https://example.org/galaxy/published/workflow?id=1") == ("https://example.org/galaxy", "/published/workflow")
-    assert split("https://example.org/galaxy/") == ("https://example.org/galaxy", "")
+    # a page Galaxy still serves under its old name, and an unknown page (the server itself)
+    assert split("https://usegalaxy.eu/history/view?id=1") == ("https://usegalaxy.eu", "/history/view")
+    assert split("https://example.org/galaxy/") == ("https://example.org", "/galaxy/")
+    assert ghevaluator.is_workflow_url("https://usegalaxy.eu/u/someone/w/my-workflow")
 
 
 def test_partly_failed_collection_step():

@@ -14,6 +14,8 @@ from ghevaluator.history import (  # noqa: F401
     fetch_dataset_text,
     get_hist_info,
     get_workflow_from_history,
+    galaxy_id,
+    id_from_redirect,
     load_history,
     SESSION,
     split_galaxy_url,
@@ -33,39 +35,42 @@ from ghevaluator.match import (  # noqa: F401
 DEFAULT_GALAXY_URL = "https://usegalaxy.eu"
 
 
-def check_key_host(url, apikey, galaxy_url):
+def key_for(url, apikey, galaxy_url):
     """
-    Make sure the API key is only sent to its Galaxy server, not to a server named in a link
-    (e.g. a link given by a student)
+    Get the API key to use for a link: the key is only sent to its Galaxy server, not to a server
+    named in a link (e.g. a link given by a student). Links on other servers are read without key,
+    which works for published histories and histories shared via link.
 
-    :param url: URL the key would be sent to
+    :param url: link the key would be sent to
     :param apikey: optional API key
     :param galaxy_url: Galaxy server of the API key, None to allow any server
-    :raise ValueError: if an API key is given and the URL is on another server
+    :return: the API key or None
     """
     def origin(u):
         parsed = parse.urlparse(u)
-        return parsed.scheme, parsed.netloc.lower()
+        return parsed.scheme, (parsed.hostname or "").lower(), parsed.port or {"https": 443, "http": 80}.get(parsed.scheme)
 
-    if apikey and galaxy_url and origin(url) != origin(galaxy_url):
-        raise ValueError(f"{url} is not on {galaxy_url}: the API key is only sent to the Galaxy server given with --galaxy_url")
+    if galaxy_url and origin(url) != origin(galaxy_url):
+        return None
+    return apikey
 
 
 def get_standard_workflow(wf_url, apikey=None, galaxy_url=DEFAULT_GALAXY_URL):
     """
     Turn the workflow in a provided link into a dictionary, as the standard to be compared with the user workflow.
 
-    :param wf_url: link to a workflow file, or to a Galaxy workflow with the workflow id (e.g. /published/workflow?id=...)
+    :param wf_url: link to a workflow file, or to a Galaxy workflow (e.g. /published/workflow?id=... or /u/<username>/w/<slug>)
     :param apikey: optional API key, for a Galaxy workflow
     :param galaxy_url: Galaxy server of the API key
     :return: dictionary with the workflow
     """
     url = parse.urlparse(wf_url)
     wf_id = parse.parse_qs(url.query).get("id", [None])[0]
+    if wf_id is None and re.search(r"/u/[^/]+/w/[^/]+/?$", url.path):
+        wf_id = id_from_redirect(wf_url)
     if wf_id:
-        check_key_host(wf_url, apikey, galaxy_url)
         server = split_galaxy_url(wf_url)[0]
-        return api_get(server, f"workflows/{wf_id}/download", apikey, params={"format": "json-download"})
+        return api_get(server, f"workflows/{galaxy_id(wf_id, wf_url)}/download", key_for(wf_url, apikey, galaxy_url), params={"format": "json-download"})
     r = SESSION.get(wf_url, timeout=60)
     r.raise_for_status()
     return r.json()
@@ -584,7 +589,7 @@ def is_workflow_url(url):
     :return: boolean
     """
     path = parse.urlparse(url).path
-    return path.endswith((".ga", "/workflow")) or "/workflows/" in path
+    return path.endswith((".ga", "/workflow")) or "/workflows/" in path or bool(re.search(r"/u/[^/]+/w/[^/]+/?$", path))
 
 
 def get_reference(ref_url, apikey=None, ref_type=None, galaxy_url=DEFAULT_GALAXY_URL):
@@ -600,8 +605,7 @@ def get_reference(ref_url, apikey=None, ref_type=None, galaxy_url=DEFAULT_GALAXY
     ref_type = ref_type or ('workflow' if is_workflow_url(ref_url) else 'history')
     if ref_type == 'workflow':
         return get_standard_workflow(ref_url, apikey, galaxy_url), 'workflow'
-    check_key_host(ref_url, apikey, galaxy_url)
-    return get_workflow_from_history(ref_url, apikey), 'history'
+    return get_workflow_from_history(ref_url, key_for(ref_url, apikey, galaxy_url)), 'history'
 
 
 def evaluate(hist_url, ref_url, apikey=None, ref_wf=None, ref_type=None, galaxy_url=DEFAULT_GALAXY_URL):
@@ -616,11 +620,10 @@ def evaluate(hist_url, ref_url, apikey=None, ref_wf=None, ref_type=None, galaxy_
     :param galaxy_url: Galaxy server of the API key, the key is not sent to other servers
     :return: dictionary with report
     """
-    check_key_host(hist_url, apikey, galaxy_url)
     ref, ref_type = ref_wf if ref_wf is not None else get_reference(ref_url, apikey, ref_type, galaxy_url)
-    hist_wf = get_workflow_from_history(hist_url, apikey)
+    hist_wf = get_workflow_from_history(hist_url, key_for(hist_url, apikey, galaxy_url))
     report = {'inputs': {'history': hist_url, 'workflow': ref_url, 'reference': ref_url, 'reference_type': ref_type}}
-    return compare_workflows(hist_wf, ref, report, fetch_text=lambda url, ds: fetch_dataset_text(url, ds, apikey))
+    return compare_workflows(hist_wf, ref, report, fetch_text=lambda url, ds: fetch_dataset_text(url, ds, key_for(url, apikey, galaxy_url)))
 
 
 def ghevaluator(hist_url, wf_url, apikey, output_dp, ref_type=None, galaxy_url=DEFAULT_GALAXY_URL):

@@ -77,7 +77,7 @@ $ ghevaluator -c histories.csv -a $GALAXY_API_KEY -o reports
 
 The reports of each history are written in a folder named after the student, with an `overview.md` and `overview.json` of all histories.
 
-History URLs can be links with the history id (`/histories/view?id=...`, `/published/history?id=...`) or `/u/<username>/h/<slug>` links of published histories. Histories have to be accessible to the API key owner, e.g. shared with them, or published. The API key is only sent to the Galaxy server given with `-g` (https://usegalaxy.eu by default), so a link to another server in the CSV file can not get the key. Nothing is created or changed in Galaxy.
+History URLs can be links with the history id (`/histories/view?id=...`, `/published/history?id=...`) or `/u/<username>/h/<slug>` links of published histories. Histories have to be accessible to the API key owner, e.g. shared with them, or published. The API key is only sent to the Galaxy server given with `-g` (https://usegalaxy.eu by default), so a link to another server in the CSV file can not get the key: histories on other servers are read without key, which works for published histories and histories shared via link. Reference workflows can also be Galaxy workflow links (`/published/workflow?id=...` or `/u/<username>/w/<slug>`). Nothing is created or changed in Galaxy.
 
 ### What is compared
 
