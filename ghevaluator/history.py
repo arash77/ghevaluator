@@ -42,8 +42,8 @@ DONE_STATES = ("ok", "skipped")
 # one connection for the many API calls of a history
 SESSION = requests.Session()
 
-# dataset states of a finished dataset (discarded: purged after it was made)
-DATASET_DONE_STATES = ("ok", "deferred", "discarded")
+# dataset states of a finished dataset (discarded: see dataset_done)
+DATASET_DONE_STATES = ("ok", "deferred", "failed_metadata")
 
 
 def split_galaxy_url(url):
@@ -299,13 +299,15 @@ def build_workflow(history):
             }
             continue
         # a mapped over step has one job per collection element, the summary gives one of them:
-        # the states of the output datasets tell how many failed
-        states = Counter()
+        # the states of the output datasets tell how many failed. Each output collection has the
+        # datasets of all jobs, so the collection with the most failed datasets is counted.
+        elements, failed_elements = 0, 0
         if job.get("implicit_collection_jobs_id"):
             for output in job["outputs"]:
-                states.update(history.get("collection_states", {}).get(output["id"], {}))
-        elements = sum(states.values())
-        failed_elements = sum(n for state, n in states.items() if state not in DATASET_DONE_STATES)
+                states = history.get("collection_states", {}).get(output["id"], {})
+                failed = sum(n for state, n in states.items() if not dataset_done(state, job_details))
+                if (failed, sum(states.values())) > (failed_elements, elements):
+                    failed_elements, elements = failed, sum(states.values())
         parameters = dict(job_details["params"])
         input_connections = {}
         for name, inp in job_details["inputs"].items():
@@ -341,14 +343,26 @@ def build_workflow(history):
 
 def job_finished(job_details):
     """
-    Check if a job finished (interactive tools end as deleted when they are stopped)
+    Check if a job finished (interactive tools end as deleted, or stopped since Galaxy 26.2, when they are stopped)
 
     :param job_details: job details
     :return: boolean
     """
     if tool_key(job_details.get("tool_id")).startswith("interactive_tool_"):
-        return job_details.get("state") in DONE_STATES + ("deleted", "deleting")
+        return job_details.get("state") in DONE_STATES + ("deleted", "deleting", "stopped", "stopping")
     return job_details.get("state") in DONE_STATES
+
+
+def dataset_done(state, job_details):
+    """
+    Check if an output dataset is finished. Discarded datasets have no data: the outputs of a cancelled
+    job (not finished), or of a finished job whose data was purged or not imported (finished).
+
+    :param state: dataset state
+    :param job_details: details of the job (one of the jobs, for a mapped over step)
+    :return: boolean
+    """
+    return state in DATASET_DONE_STATES or (state == "discarded" and job_finished(job_details))
 
 
 def get_main_history_id(hist_id, steps):

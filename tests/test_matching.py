@@ -658,3 +658,29 @@ def test_failed_steps_are_listed_also_when_matched():
     assert report["score"]["failed_steps"] == 1
     assert "Failed or not finished, so not counted as done: Group." in report["in_short"]
     assert report["score"]["steps"] == 100.0
+
+
+def test_cancelled_collection_step_and_several_output_collections():
+    with (DATA / f"{TB_ID}.json").open() as f:
+        history = json.load(f)
+    step = next(j for j in history["summary"]["jobs"] if j.get("tool_name") == "Finds SNP sites" and j.get("implicit_collection_jobs_id"))
+    job = history["jobs"][step["id"]]
+    output = step["outputs"][0]["id"]
+
+    def built():
+        wf = ghevaluator.build_workflow(history)
+        return next(s for s in wf["steps"].values() if s.get("job_id") == step["id"])
+
+    # all 20 jobs cancelled: outputs discarded
+    job["state"] = "deleted"
+    history["collection_states"] = {output: {"discarded": 20}}
+    assert built()["failed"]
+    # finished, data purged later
+    job["state"] = "ok"
+    assert not built()["failed"]
+    # 2 output collections with the datasets of the same 20 jobs, 3 failed
+    step["outputs"].append(dict(step["outputs"][0], id="second"))
+    history["collection_states"] = {output: {"ok": 17, "error": 3}, "second": {"ok": 17, "error": 3}}
+    assert (built()["failed_elements"], built()["elements"]) == (3, 20)
+    # a stopped interactive tool (Galaxy 26.2) is finished
+    assert ghevaluator.history.job_finished({"tool_id": "toolshed.g2.bx.psu.edu/repos/bgruening/interactive_tool_jupyter_notebook/interactive_tool_jupyter_notebook/1", "state": "stopped"})
