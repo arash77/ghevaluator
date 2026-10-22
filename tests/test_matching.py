@@ -440,6 +440,14 @@ def test_swapped_inputs_are_not_the_same():
 def test_multiple_input_names_are_merged():
     step = {"input_connections": {"inputs": {"id": 1}, "inputs1": {"id": 2}, "input1": {"id": 3}, "input2": [{"id": 4}]}}
     assert ghevaluator.match.connections_by_name(step) == {"inputs": [1, 2], "input1": [3], "input2": [4]}
+    # a multiple input whose name ends with a digit, and two separate inputs
+    step = {"input_connections": {"opt_in1": {"id": 1}, "opt_in11": {"id": 2}, "opt_in12": {"id": 3}, "input": {"id": 4}, "input2": {"id": 5}}}
+    assert ghevaluator.match.connections_by_name(step) == {"opt_in1": [1, 2, 3], "input": [4], "input2": [5]}
+
+
+def test_null_data_inputs_of_old_workflow_files_are_not_settings():
+    step = {"tool_state": '{"input_file": null, "limits": null, "kmers": "7"}', "input_connections": {"input_file": {"id": 0}}}
+    assert ghevaluator.match.step_parameters(step) == {"limits": None, "kmers": "7"}
 
 
 def test_workflow_file_reference_has_no_output_formats():

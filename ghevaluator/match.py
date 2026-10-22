@@ -122,6 +122,18 @@ def without_data(parameters):
     return {p: v for p, v in parameters.items() if v is not CONNECTED}
 
 
+def step_parameters(step):
+    """
+    Get the comparable parameters of a workflow step, without the connected data inputs
+    (older workflow files store them as null)
+
+    :param step: workflow step
+    :return: dictionary with parameters
+    """
+    connected = set(step.get("input_connections", {}))
+    return {p: v for p, v in clean_parameters(step.get("tool_state", "{}")).items() if p not in connected}
+
+
 def parameter_agreement(ref_step, hist_step):
     """
     Fraction of the reference step parameters with the same value in the history step
@@ -130,8 +142,8 @@ def parameter_agreement(ref_step, hist_step):
     :param hist_step: workflow step of the history
     :return: number between 0 and 1
     """
-    ref_params = clean_parameters(ref_step.get("tool_state", "{}"))
-    hist_params = clean_parameters(hist_step.get("tool_state", "{}"))
+    ref_params = step_parameters(ref_step)
+    hist_params = step_parameters(hist_step)
     if not ref_params:
         return 1.0
     same = sum(1 for p, v in ref_params.items() if hist_params.get(p) == v)
@@ -157,20 +169,26 @@ def connections_by_name(step):
     """
     Get the indexes of the steps connected to each input of a step
 
-    Numbered inputs of a multiple input (e.g. `inputs1`, `inputs2` next to `inputs` in jobs)
-    are merged into the input.
+    Jobs name the datasets of a multiple input `name`, `name1`, `name2`, ... (e.g. `inputs`,
+    `inputs1`, or `opt_in1`, `opt_in11`): they are merged into the input. Numbers that do not
+    follow on from 1 are other inputs (e.g. `input` and `input2`).
 
     :param step: workflow step
     :return: dictionary input name -> list of step indexes
     """
     names = step.get("input_connections", {})
+    merged = {}
+    for base in sorted(names, key=len):
+        if base in merged:
+            continue
+        numbered = {int(n[len(base):]): n for n in names if n not in merged and n != base and n.startswith(base) and n[len(base):].isdigit() and not n[len(base):].startswith("0")}
+        if numbered and sorted(numbered) == list(range(1, len(numbered) + 1)):
+            merged.update({n: base for n in numbered.values()})
     by_name = {}
     for name, connection in names.items():
-        base = name.rstrip("0123456789")
-        key = base if base != name and base in names else name
         for c in connection if isinstance(connection, list) else [connection]:
             if isinstance(c, dict) and "id" in c:
-                by_name.setdefault(key, []).append(int(c["id"]))
+                by_name.setdefault(merged.get(name, name), []).append(int(c["id"]))
     return by_name
 
 

@@ -24,6 +24,7 @@ from ghevaluator.match import (  # noqa: F401
     is_input_step,
     match_steps,
     same_connections,
+    step_parameters,
     text_similarity,
     tool_key,
 )
@@ -147,7 +148,7 @@ def reformate_workflows(wf):
             "id": id if id is not None else step['tool_id'],
             "owner": owner,
             "version": version if version is not None else step.get('tool_version'),
-            "parameters": clean_parameters(step['tool_state']),
+            "parameters": step_parameters(step),
             "inputs_connection": get_input_id(step['input_connections']),
             "order": key
         }
