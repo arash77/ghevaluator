@@ -278,6 +278,49 @@ def test_copy_of_a_copy_with_results_from_a_third_history():
     assert any(s.startswith("Results copied from another history: ") for s in report["in_short"])
 
 
+def test_copied_from_same_or_another_user():
+    """Galaxy gives the user of each job: results copied from the student's own other history are told apart"""
+    ref = load(REF_ID)
+    hist = copy.deepcopy(ref)
+    hist["user_id"] = "student"
+    for s in hist["steps"].values():
+        if s["type"] == "tool":
+            s["user_id"] = "student"
+    k = step_by_tool(hist, "Grouping1")
+    hist["steps"][k].update(history_id="classmate_history", user_id="classmate")
+    j = step_by_tool(hist, "get_flanks1")
+    hist["steps"][j].update(history_id="own_other_history")
+    report = compare(hist, ref)
+    by = {s["tool"]: s["by"] for s in report["copied_steps"]}
+    assert by == {hist["steps"][k]["name"]: "another user", hist["steps"][j]["name"]: "same user"}
+    flags = {c["id"]["workflow"]: c for c in report["comparison_given_reference_workflow_order"].values()}
+    assert flags["Grouping1"]["copied_by"] == "another user"
+    assert flags["get_flanks1"]["copied_by"] == "same user"
+    assert any(s.startswith("Results copied from a history of another user: ") for s in report["in_short"])
+    assert any(s.startswith("Results copied from another history of the same user: ") for s in report["in_short"])
+    report["inputs"] = {"history": "h", "workflow": "w"}
+    assert "| another user |" in ghevaluator.generate_markdown_report_content(report)
+    # without user ids (older Galaxy, or a job that can not be read) nothing is guessed
+    del hist["user_id"]
+    assert all(s["by"] is None for s in compare(hist, ref)["copied_steps"])
+
+
+def test_whole_copy_by_same_user():
+    """A student who copied their own history: the whole copy is said to be of the same user"""
+    ref = load(REF_ID)
+    hist = copy.deepcopy(ref)
+    hist.update(history_id="student_copy", user_id="student")
+    for s in hist["steps"].values():
+        if s["type"] == "tool":
+            s["user_id"] = "student"
+    hist["main_history_id"] = ghevaluator.history.get_main_history_id("student_copy", hist["steps"])
+    report = compare(hist, ref)
+    assert report["all_steps_by"] == "same user"
+    assert report["in_short"][0].endswith("this is a copy of a whole history of the same user.")
+    hist["user_id"] = "tutor"
+    assert compare(hist, ref)["all_steps_by"] == "another user"
+
+
 def test_inaccessible_job():
     """A job that can not be read (e.g. copied from a private history) does not stop the evaluation"""
     with (DATA / f"{STUDENT_ID}.json").open() as f:

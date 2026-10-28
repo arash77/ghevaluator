@@ -5,7 +5,7 @@
 - Galaxy history: {{ report.inputs.history }}
 - Reference {{ report.inputs.reference_type or "workflow" }}: {{ report.inputs.workflow }}
 {% if report.all_steps_from_history %}
-> ⚠️ No step of this history ran in it, most steps ran in history {{ report.all_steps_from_history }}: the history is a copy of a whole history. This is expected for a history imported by a tutor, not for a history shared by a student.
+> ⚠️ No step of this history ran in it, most steps ran in history {{ report.all_steps_from_history }}: the history is a copy of a whole history{% if report.all_steps_by %} ({{ report.all_steps_by }}){% endif %}. This is expected for a history imported by a tutor, not for a history shared by a student.
 {% endif %}
 {%- if report.in_short %}
 ## In short
@@ -43,7 +43,7 @@ In the tables: ✅ same as the reference, ❌ different from the reference or mi
 {%- if s.status == "missing" %}
 | {{ s.order.workflow }} | {{ cell(s.tool.workflow) }} | missing | {{ cell(s.version.workflow) }} | | | |
 {%- else %}
-| {{ s.order.workflow }} | {{ cell(s.tool.workflow) }} | {{ s.order.history }} | {{ cell(s.version.workflow) }} / {{ cell(s.version.history) }} {% if not s.version.same %}⚠️{% endif %} | {{ yes(s.inputs_connection.same) }} | {{ s.parameters.wrong }} / {{ s.parameters.number.workflow }} | {% if s.output_formats and not s.output_formats.same %}output formats {{ s.output_formats.history | join(", ") }} instead of {{ s.output_formats.workflow | join(", ") }}. {% endif %}{% if s.cached %}job cache{% if s.cached_reference %} (also in the reference){% endif %}. {% endif %}{% if s.failed_elements %}{{ s.failed_elements }} of {{ s.elements }} collection elements failed. {% endif %}{% if s.deleted %}outputs deleted. {% endif %}{% if s.copied_from_history %}copied from history {{ s.copied_from_history }}.{% endif %} |
+| {{ s.order.workflow }} | {{ cell(s.tool.workflow) }} | {{ s.order.history }} | {{ cell(s.version.workflow) }} / {{ cell(s.version.history) }} {% if not s.version.same %}⚠️{% endif %} | {{ yes(s.inputs_connection.same) }} | {{ s.parameters.wrong }} / {{ s.parameters.number.workflow }} | {% if s.output_formats and not s.output_formats.same %}output formats {{ s.output_formats.history | join(", ") }} instead of {{ s.output_formats.workflow | join(", ") }}. {% endif %}{% if s.cached %}job cache{% if s.cached_reference %} (also in the reference){% endif %}. {% endif %}{% if s.failed_elements %}{{ s.failed_elements }} of {{ s.elements }} collection elements failed. {% endif %}{% if s.deleted %}outputs deleted. {% endif %}{% if s.copied_from_history %}copied from history {{ s.copied_from_history }}{% if s.copied_by %} ({{ s.copied_by }}){% endif %}.{% endif %} |
 {%- endif %}
 {%- endfor %}
 {% for step_num, s in report.comparison_given_reference_workflow_order.items() %}
@@ -81,9 +81,9 @@ Last step of the reference: step {{ report.final_outputs.reference_step.order }}
 {%- if report.copied_steps %}
 ## Steps copied from another history
 
-| History step | Tool | History where the job ran |
-|---|---|---|
+| History step | Tool | History where the job ran | Run by |
+|---|---|---|---|
 {%- for s in report.copied_steps %}
-| {{ s.order }} | {{ cell(s.tool) }} | {{ s.history }} |
+| {{ s.order }} | {{ cell(s.tool) }} | {{ s.history }} | {{ s.by or "unknown" }} |
 {%- endfor %}
 {% endif %}

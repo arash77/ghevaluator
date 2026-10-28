@@ -77,7 +77,7 @@
                 <tr class="wrong">
                     <td class="has-text-left">Copied</td>
                     <td class="has-text-left"></td>
-                    <td class="has-text-left">Job ran in history {{ step_res.copied_from_history }}</td>
+                    <td class="has-text-left">Job ran in history {{ step_res.copied_from_history }}{% if step_res.copied_by %} ({{ step_res.copied_by }}){% endif %}</td>
                     <td class="has-text-left">{{ status(false) }}</td>
                 </tr>
                 {% endif %}
@@ -111,7 +111,7 @@
                     </ul>
 
                 {% if report.all_steps_from_history %}
-                <div class="notification is-warning">No step of this history ran in it, most steps ran in history {{ report.all_steps_from_history }}: the history is a copy of a whole history. This is expected for a history imported by a tutor, not for a history shared by a student.</div>
+                <div class="notification is-warning">No step of this history ran in it, most steps ran in history {{ report.all_steps_from_history }}: the history is a copy of a whole history{% if report.all_steps_by %} ({{ report.all_steps_by }}){% endif %}. This is expected for a history imported by a tutor, not for a history shared by a student.</div>
                 {% endif %}
 
                 {% if report.in_short %}
@@ -208,9 +208,9 @@
                 {% if report.copied_steps %}
                     <h3>Steps copied from another history</h3>
                     <table class="table is-fullwidth">
-                        <tr class="th"><th>Step</th><th>Tool</th><th>History where the job ran</th></tr>
+                        <tr class="th"><th>Step</th><th>Tool</th><th>History where the job ran</th><th>Run by</th></tr>
                         {% for s in report.copied_steps %}
-                        <tr><td class="has-text-left">{{ s.order }}</td><td class="has-text-left">{{ s.tool }}</td><td class="has-text-left">{{ s.history }}</td></tr>
+                        <tr><td class="has-text-left">{{ s.order }}</td><td class="has-text-left">{{ s.tool }}</td><td class="has-text-left">{{ s.history }}</td><td class="has-text-left">{{ s.by or "unknown" }}</td></tr>
                         {% endfor %}
                     </table>
                 {% endif %}

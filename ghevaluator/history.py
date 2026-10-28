@@ -22,6 +22,7 @@ JOB_FIELDS = [
     "tool_id",
     "tool_version",
     "history_id",
+    "user_id",
     "state",
     "create_time",
     "update_time",
@@ -199,6 +200,8 @@ def load_history(hist_url, apikey=None):
         and states) and jobs
     """
     galaxy_url, hist_name, hist_id = get_hist_info(hist_url, apikey)
+    # owner of the history, to tell results copied from the same user from results of someone else
+    user_id = api_get(galaxy_url, f"histories/{hist_id}", apikey, params={"keys": "user_id"}).get("user_id")
     summary = api_get(galaxy_url, f"histories/{hist_id}/extraction_summary", apikey)
     contents = api_get(
         galaxy_url,
@@ -228,6 +231,7 @@ def load_history(hist_url, apikey=None):
         "history_id": hist_id,
         "history_name": hist_name,
         "history_url": hist_url,
+        "user_id": user_id,
         "summary": summary,
         "contents": contents,
         "collections": collections,
@@ -267,7 +271,7 @@ def build_workflow(history):
     """
     Turn a loaded history into a workflow, with steps in the format of a Galaxy workflow file
 
-    Besides the usual keys, tool steps have `job_id`, `history_id` (history where the job ran),
+    Besides the usual keys, tool steps have `job_id`, `history_id` (history where the job ran), `user_id` (user who ran the job),
     `cached` (job result reused from the job cache), `failed` (job failed or not finished, for a step mapped
     over a collection: all its jobs), `failed_elements` and `elements` (datasets of the output collections
     of a mapped over step, failed and all), `end_time`, `inaccessible` (job details can not be read) and all
@@ -322,6 +326,7 @@ def build_workflow(history):
                 "deleted": deleted,
                 "job_id": job["id"],
                 "history_id": None,
+                "user_id": None,
                 "inaccessible": True,
                 "cached": False,
                 "failed": False,
@@ -357,6 +362,7 @@ def build_workflow(history):
             "deleted": deleted,
             "job_id": job["id"],
             "history_id": job_details["history_id"],
+            "user_id": job_details.get("user_id"),
             "cached": bool(job_details.get("copied_from_job_id")),
             "failed": failed_elements == elements if elements else not job_finished(job_details),
             "failed_elements": failed_elements,
@@ -368,6 +374,7 @@ def build_workflow(history):
         "name": f"{history['history_name']} workflow",
         "history_id": history["history_id"],
         "main_history_id": get_main_history_id(history["history_id"], steps),
+        "user_id": history.get("user_id"),
         "galaxy_url": history["galaxy_url"],
         "steps": steps,
     }

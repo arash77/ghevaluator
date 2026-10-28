@@ -368,6 +368,7 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
     # Compare matched steps
     hist_by_order = {s['order']: s for s in ordered_hist_wf}
     main_history = hist_wf.get('main_history_id')
+    owner = hist_wf.get('user_id')
     # workflow files have outputs too, but with formats only known from the history
     ref_is_history = bool(ref_wf.get('history_id'))
     comparison = {}
@@ -393,6 +394,7 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
             s_report['copied_from_history'] = 'not accessible'
         else:
             s_report['copied_from_history'] = copied_from if copied_from and main_history and copied_from != main_history else None
+        s_report['copied_by'] = copied_by(raw_hist, owner) if s_report['copied_from_history'] else None
         if raw_hist and ref_is_history:
             s_report['output_formats'] = {
                 'workflow': output_formats(raw_ref),
@@ -438,11 +440,15 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
         'order': k,
         'tool': s['name'],
         'history': 'not accessible' if s.get('inaccessible') else s['history_id'],
+        'by': copied_by(s, owner),
     } for k, s in hist_steps.items() if s.get('inaccessible') or (s.get('history_id') and main_history and s['history_id'] != main_history)]
     # All jobs ran in another history: the history is a copy of a whole history
     report['history_id'] = hist_wf.get('history_id')
     report['main_history_id'] = main_history
     report['all_steps_from_history'] = main_history if main_history and main_history != hist_wf.get('history_id') else None
+    # who ran the jobs of a copied whole history: only said when they were all run by one user
+    runners = {s.get('user_id') for s in hist_steps.values() if s.get('history_id') == main_history}
+    report['all_steps_by'] = copied_by({'user_id': runners.pop()}, owner) if report['all_steps_from_history'] and len(runners) == 1 else None
     if ref_is_history:
         report['final_outputs'] = compare_final_outputs(ref_wf, hist_wf, fetch_text)
     scores = [step_score(c) for c in comparison.values()]
@@ -460,6 +466,19 @@ def compare_workflows(hist_wf, ref_wf, report, fetch_text=None):
     }
     report['in_short'] = summarize_report(report)
     return report
+
+
+def copied_by(step, owner):
+    """
+    Tell if a step of a history was run by the owner of the history
+
+    :param step: workflow step with the `user_id` of its job
+    :param owner: user id of the owner of the history
+    :return: "same user", "another user", or None when the user of the job or the owner is not known
+    """
+    if not owner or not step or not step.get('user_id'):
+        return None
+    return 'same user' if step['user_id'] == owner else 'another user'
 
 
 def count_names(names):
@@ -487,7 +506,8 @@ def summarize_report(report):
     missing = [s['tool']['workflow'] for s in steps if s['status'] == 'missing']
     sentences = []
     if report.get('all_steps_from_history'):
-        sentences.append(f"No step ran in this history, most ran in history {report['all_steps_from_history']}: this is a copy of a whole history.")
+        by = {'same user': ' of the same user', 'another user': ' of another user'}.get(report.get('all_steps_by'), '')
+        sentences.append(f"No step ran in this history, most ran in history {report['all_steps_from_history']}: this is a copy of a whole history{by}.")
     if missing:
         sentences.append(f"{len(matched)} of {len(steps)} steps done. Missing: {count_names(missing)}.")
     else:
@@ -507,9 +527,10 @@ def summarize_report(report):
     failed = [s['tool'] for s in report.get('failed_steps', [])]
     if failed:
         sentences.append(f"Failed or not finished, so not counted as done: {count_names(failed)}.")
-    copied = [s['tool'] for s in report['copied_steps']]
-    if copied:
-        sentences.append(f"Results copied from another history: {count_names(copied)}.")
+    for by, text in (('another user', "Results copied from a history of another user"), ('same user', "Results copied from another history of the same user"), (None, "Results copied from another history")):
+        copied = [s['tool'] for s in report['copied_steps'] if s.get('by') == by]
+        if copied:
+            sentences.append(f"{text}: {count_names(copied)}.")
     partly_failed = [f"{s['tool']['workflow']} ({s['failed_elements']} of {s['elements']})" for s in matched if s.get('failed_elements')]
     if partly_failed:
         sentences.append(f"Some collection elements failed: {', '.join(partly_failed)}.")
