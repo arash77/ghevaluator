@@ -742,7 +742,7 @@ def evaluate_histories(rows, output_dp, apikey=None, galaxy_url=DEFAULT_GALAXY_U
             n += 1
             folder = f"{base}_{n}"
         folders.add(folder)
-        entry = dict(row, report=f"{folder}/report.md", score=None, in_short=[], error=None)
+        entry = dict(row, history_id=None, report=f"{folder}/report.md", score=None, in_short=[], error=None)
         try:
             if row['reference'] not in references:
                 # a reference that can not be loaded is not tried again for each history
@@ -754,6 +754,7 @@ def evaluate_histories(rows, output_dp, apikey=None, galaxy_url=DEFAULT_GALAXY_U
                 raise references[row['reference']]
             report = evaluate(row['history'], row['reference'], apikey, references[row['reference']], galaxy_url=galaxy_url)
             generate_report_files(report, output_dp / folder)
+            entry['history_id'] = report['history_id']
             entry['score'] = report['score']
             entry['in_short'] = report['in_short']
         except Exception as e:  # keep going with the other histories

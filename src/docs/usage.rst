@@ -54,9 +54,79 @@ The tool needs:
 
 4. Optionally, the path to the folder where the reports should be created
 
-Several histories can be evaluated at once with a CSV file (``-c``) with the columns ``student name``, ``stud hist id``, ``ref hist id`` and optionally ``tutorial name``. History columns can contain history ids (on the Galaxy server given with ``-g``) or URLs, the reference column can also contain a URL to a workflow file.
+Examples
+--------
 
-Nothing is created or changed in Galaxy.
+Compare a history to the workflow of a `GTN <https://training.galaxyproject.org/>`_ tutorial:
+
+.. code-block:: bash
+
+    $ ghevaluator \
+        -u "https://usegalaxy.eu/histories/view?id=19b7e0ced2125767" \
+        -w "https://training.galaxyproject.org/training-material/topics/introduction/tutorials/galaxy-intro-short/workflows/Galaxy-Workflow-galaxy-intro-short.ga" \
+        -o report
+
+Compare a history to a reference history, e.g. the tutor's own run of the tutorial:
+
+.. code-block:: bash
+
+    $ ghevaluator \
+        -u "https://usegalaxy.eu/histories/view?id=892319be4e2b6ca2" \
+        -r "https://usegalaxy.eu/histories/view?id=c1ad4cd9d7df4ada" \
+        -o report
+
+Compare a history shared only with your account (not published):
+
+.. code-block:: bash
+
+    $ ghevaluator -u "https://usegalaxy.eu/histories/view?id=..." -r "https://usegalaxy.eu/histories/view?id=..." -a $GALAXY_API_KEY -o report
+
+On another Galaxy server, give the server with ``-g`` so the key is sent to it:
+
+.. code-block:: bash
+
+    $ ghevaluator -g https://usegalaxy.org -u "https://usegalaxy.org/histories/view?id=..." -w workflow.ga -a $GALAXY_API_KEY
+
+
+Several histories
+-----------------
+
+Several histories can be evaluated at once with a CSV file (``-c``), e.g. all participants of a training:
+
+.. code-block:: bash
+
+    $ ghevaluator -c histories.csv -a $GALAXY_API_KEY -o reports
+
+The CSV file has one row per history, with these columns (in any order, case does not matter):
+
+=================== ====================== ===============================================================
+Column              Other accepted name    Content
+=================== ====================== ===============================================================
+``student name``    ``student``            name of the student, used for the folder of the reports
+``stud hist id``    ``student_history``    id or link of the history to evaluate
+``ref hist id``     ``ref_history``        id or link of the reference history, or link of a workflow
+``tutorial name``                          optional, shown in the overview and used for the folder
+=================== ====================== ===============================================================
+
+For example:
+
+.. code-block:: text
+
+    Tutorial name,Ref hist id,Stud hist id,Student name
+    From Peaks to Genes,c1ad4cd9d7df4ada,892319be4e2b6ca2,Participant 1
+    Galaxy intro,https://training.galaxyproject.org/training-material/topics/introduction/tutorials/galaxy-intro-short/workflows/Galaxy-Workflow-galaxy-intro-short.ga,19b7e0ced2125767,Participant 1
+
+- History ids are on the Galaxy server given with ``-g``. Links can point to any server.
+- Each row has its own reference, so one file can cover several tutorials. A reference is loaded once for all
+  its rows. A reference that can not be loaded is tried only once: all its rows get the error.
+- Files saved by Excel or Google Sheets work: separated by ``,``, ``;`` (e.g. German Excel) or tabs, in UTF-8 or
+  Windows encoding. Rows without student, history or reference are skipped.
+- A student can be in several rows, e.g. one per tutorial or several histories for the same tutorial. Each history
+  gets its own row in the overview and its own folder: the folder is named after the student and the tutorial,
+  with ``_2``, ``_3``, ... for the next histories with the same name. The **History** column of the overview links
+  each history, so rows of the same student are told apart.
+- A history that can not be evaluated (e.g. wrong link, not shared) gets an error in the overview, and the other
+  histories are still evaluated.
 
 
 Output
@@ -64,7 +134,14 @@ Output
 
 For each history, the tool generates:
 
+- ``report.html`` and ``report.md`` with a summary in plain sentences, the score, and the comparison of each
+  reference step with the matched history step (tool, version, inputs, settings, output formats), the extra steps,
+  copied steps and, with a reference history, the comparison of the final output
 - ``report.json`` with all the details of the comparison
-- ``report.html`` and ``report.md`` with a summary (score, missing and extra steps, copied steps, steps from the job cache), the comparison of each reference step with the matched history step (tool, version, parameters, inputs, output formats) and, with a reference history, the comparison of the final output
 
-With a CSV file, the reports of each history are written in a folder named after the student, with ``overview.md`` and ``overview.json`` for all histories.
+With a CSV file, the reports of each history are in their own folder, with ``overview.md`` and ``overview.json``
+for all histories. ``overview.md`` is a table with, for each history: student, tutorial, history link, step score,
+final result, the summary in plain sentences, and the link to the report. It is written after each history, so the
+histories already evaluated are kept if the run is interrupted.
+
+How the steps are matched, what counts as done and how the score is computed is explained in :doc:`how_it_works`.

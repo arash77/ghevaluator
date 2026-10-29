@@ -118,5 +118,5 @@ To update it:
 2. Generate the doc with
 
     ```bash
-    $ make html
+    $ make doc
     ```

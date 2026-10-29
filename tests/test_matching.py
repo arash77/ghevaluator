@@ -455,11 +455,15 @@ def test_in_short():
 def test_overview():
     report = compare(load(STUDENT_ID), load(REF_ID))
     rows = [
-        {"student": "Student A", "tutorial": "peaks", "report": "Student_A_peaks/report.md", "score": report["score"], "in_short": report["in_short"], "error": None},
-        {"student": "Student B", "tutorial": "peaks", "report": "Student_B_peaks/report.md", "score": None, "in_short": [], "error": "400 Client Error"},
+        {"student": "Student A", "tutorial": "peaks", "history": "https://usegalaxy.eu/histories/view?id=1a", "history_id": "1a", "report": "Student_A_peaks/report.md", "score": report["score"], "in_short": report["in_short"], "error": None},
+        # a second history of the same student is told apart by its history link
+        {"student": "Student A", "tutorial": "peaks", "history": "https://usegalaxy.eu/histories/view?id=2b", "history_id": "2b", "report": "Student_A_peaks_2/report.md", "score": report["score"], "in_short": report["in_short"], "error": None},
+        {"student": "Student B", "tutorial": "peaks", "history": "https://usegalaxy.eu/u/b/h/peaks", "history_id": None, "report": "Student_B_peaks/report.md", "score": None, "in_short": [], "error": "400 Client Error"},
     ]
     content = ghevaluator.generate_overview_content(rows)
-    assert "| Student A | peaks | 87.5 % |  | 7 of 8 steps done. Missing: Sort. Extra steps: Select last. Failed or not finished, so not counted as done: Group (2 times). | [report](Student_A_peaks/report.md) |" in content
+    assert "| Student A | peaks | [2b](https://usegalaxy.eu/histories/view?id=2b) | 87.5 % |" in content
+    assert "| Student B | peaks | [history](https://usegalaxy.eu/u/b/h/peaks) | | | ❌" in content
+    assert "| Student A | peaks | [1a](https://usegalaxy.eu/histories/view?id=1a) | 87.5 % |  | 7 of 8 steps done. Missing: Sort. Extra steps: Select last. Failed or not finished, so not counted as done: Group (2 times). | [report](Student_A_peaks/report.md) |" in content
     assert "Could not be evaluated: 400 Client Error" in content
 
 
